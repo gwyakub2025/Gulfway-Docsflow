@@ -1,0 +1,6 @@
+{
+  "name": "Gulf Way DocFlow",
+  "description": "Company Form Management, Document Generation, Digital Signature, Document Numbering, Approval and Digital Records Management System",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

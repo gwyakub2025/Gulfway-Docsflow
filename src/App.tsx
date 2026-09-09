@@ -430,6 +430,17 @@ export function App() {
                   companies={companies}
                   onCompanyCreated={async (newComp) => {
                     setCompanies([...companies, newComp]);
+                    await refreshDocumentsAndStats();
+                  }}
+                  onCompanyDeleted={(deletedId) => {
+                    setCompanies(companies.filter((c) => c.id !== deletedId));
+                    if (selectedCompanyId === deletedId) {
+                      setSelectedCompanyId('ALL');
+                    }
+                  }}
+                  onResetAllData={async () => {
+                    await loadInitialData();
+                    setSelectedCompanyId('ALL');
                   }}
                 />
               )}

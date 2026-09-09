@@ -137,6 +137,20 @@ app.put('/api/companies/:id', (req, res) => {
   res.json(updated);
 });
 
+app.delete('/api/companies/:id', (req, res) => {
+  const { id } = req.params;
+  const success = store.deleteCompany(id);
+  if (!success) {
+    return res.status(404).json({ error: 'Company not found' });
+  }
+  res.json({ success: true, id });
+});
+
+app.post('/api/database/clear-sample', (req, res) => {
+  store.clearSampleData();
+  res.json({ success: true, message: 'All sample data cleared. Empty database active.' });
+});
+
 app.get('/api/departments', (req, res) => {
   res.json(store.departments);
 });

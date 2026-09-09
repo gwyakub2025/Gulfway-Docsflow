@@ -97,6 +97,26 @@ export const api = {
     );
   },
 
+  async deleteCompany(id: string): Promise<{ success: boolean; id: string }> {
+    return safeFetch(
+      `/api/companies/${id}`,
+      {
+        method: 'DELETE',
+      },
+      () => clientStore.deleteCompany(id)
+    );
+  },
+
+  async clearSampleData(): Promise<{ success: boolean }> {
+    return safeFetch(
+      '/api/database/clear-sample',
+      {
+        method: 'POST',
+      },
+      () => clientStore.clearAllSampleData()
+    );
+  },
+
   // Departments
   async getDepartments(): Promise<Department[]> {
     return safeFetch('/api/departments', undefined, () => clientStore.getDepartments());

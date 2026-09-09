@@ -519,10 +519,17 @@ class ClientLocalStorageStore {
         const raw = window.localStorage.getItem(STORAGE_KEY);
         if (raw) {
           const parsed = JSON.parse(raw);
-          if (!parsed.companies || parsed.companies.length === 0) {
-            parsed.companies = DEFAULT_COMPANIES;
-          }
-          return parsed;
+          return {
+            companies: Array.isArray(parsed.companies) ? parsed.companies : [...DEFAULT_COMPANIES],
+            departments: Array.isArray(parsed.departments) ? parsed.departments : [...DEFAULT_DEPARTMENTS],
+            roles: Array.isArray(parsed.roles) ? parsed.roles : [...DEFAULT_ROLES],
+            users: Array.isArray(parsed.users) ? parsed.users : [...DEFAULT_USERS],
+            numberingRules: Array.isArray(parsed.numberingRules) ? parsed.numberingRules : [...DEFAULT_RULES],
+            formTemplates: Array.isArray(parsed.formTemplates) ? parsed.formTemplates : [...DEFAULT_TEMPLATES],
+            documents: Array.isArray(parsed.documents) ? parsed.documents : [...DEFAULT_DOCUMENTS],
+            auditLogs: Array.isArray(parsed.auditLogs) ? parsed.auditLogs : [...DEFAULT_AUDIT_LOGS],
+            currentUserId: parsed.currentUserId || 'usr-admin',
+          };
         }
       }
     } catch (e) {
@@ -624,6 +631,26 @@ class ClientLocalStorageStore {
     this.recordAudit(user.id, user.fullName, 'Company Updated', 'COMPANY', id, `Renamed ${old.name} -> ${updated.name}`);
     this.saveToStorage();
     return updated;
+  }
+
+  public deleteCompany(id: string): { success: boolean; id: string } {
+    const user = this.getCurrentUser();
+    const idx = this.data.companies.findIndex((c) => c.id === id);
+    if (idx === -1) throw new Error('Company not found');
+    const removed = this.data.companies.splice(idx, 1)[0];
+    this.recordAudit(user.id, user.fullName, 'Company Deleted', 'COMPANY', id, `Deleted company: ${removed.name} (${removed.code})`);
+    this.saveToStorage();
+    return { success: true, id };
+  }
+
+  public clearAllSampleData(): { success: boolean } {
+    const user = this.getCurrentUser();
+    this.data.companies = [];
+    this.data.documents = [];
+    this.data.auditLogs = [];
+    this.recordAudit(user.id, user.fullName, 'Database Cleared', 'AUTH', 'system', 'All sample data cleared. Clean empty database ready for manual entry.');
+    this.saveToStorage();
+    return { success: true };
   }
 
   public getDepartments(): Department[] {

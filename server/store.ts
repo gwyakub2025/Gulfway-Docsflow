@@ -1332,6 +1332,25 @@ class InMemoryStore {
     this.auditLogs.unshift(log);
     return log;
   }
+
+  public deleteCompany(id: string): boolean {
+    const idx = this.companies.findIndex((c) => c.id === id);
+    if (idx === -1) return false;
+    const removed = this.companies.splice(idx, 1)[0];
+    this.recordAudit('usr-admin', 'Super Administrator', 'Company Deleted', 'COMPANY', id, {
+      remarks: `Deleted company: ${removed.name} (${removed.code})`,
+    });
+    return true;
+  }
+
+  public clearSampleData(): void {
+    this.companies = [];
+    this.documents = [];
+    this.auditLogs = [];
+    this.recordAudit('usr-admin', 'Super Administrator', 'Database Cleared', 'AUTH', 'system', {
+      remarks: 'All sample companies and documents cleared. Clean empty database ready for manual entry.',
+    });
+  }
 }
 
 export const store = new InMemoryStore();

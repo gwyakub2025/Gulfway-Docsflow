@@ -5,7 +5,7 @@ import { store } from './server/store.js';
 import { AtomicNumberingEngine } from './server/atomicNumbering.js';
 import { PdfGenerationEngine } from './server/pdfEngine.js';
 import { QrGenerator } from './server/qrGenerator.js';
-import { DocumentRecord, StatusHistoryEntry } from './src/types/index.js';
+import { DocumentRecord, StatusHistoryEntry, FormTemplate } from './src/types/index.js';
 
 const app = express();
 const PORT = 3000;
@@ -723,7 +723,7 @@ app.post('/api/documents/:id/generate-number', async (req, res) => {
     });
   }
 
-  const template = store.formTemplates.find((t) => t.id === doc.formTemplateId);
+  const template = resolveTemplateForDocument(doc);
   if (!template) return res.status(404).json({ error: 'Form template not found' });
 
   const company = store.companies.find((c) => c.id === doc.companyId) || store.companies[0];
@@ -868,7 +868,7 @@ app.post('/api/documents/:id/digital-sign', async (req, res) => {
   doc.updatedAt = new Date().toISOString();
 
   // Re-generate PDF with newly embedded signature
-  const template = store.formTemplates.find((t) => t.id === doc.formTemplateId);
+  const template = resolveTemplateForDocument(doc);
   const company = store.companies.find((c) => c.id === doc.companyId) || store.companies[0];
   if (template) {
     const updatedPdf = await PdfGenerationEngine.generateDocumentPdf({
@@ -998,7 +998,7 @@ app.post('/api/documents/:id/finalize', async (req, res) => {
     return res.status(400).json({ error: 'Document is already in immutable FINAL status' });
   }
 
-  const template = store.formTemplates.find((t) => t.id === doc.formTemplateId);
+  const template = resolveTemplateForDocument(doc);
   const company = store.companies.find((c) => c.id === doc.companyId) || store.companies[0];
 
   if (!template) return res.status(404).json({ error: 'Template not found' });
@@ -1217,9 +1217,16 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Gulf Way DocFlow Server active on http://0.0.0.0:${PORT}`);
-  });
+  if (!process.env.VERCEL) {
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`Gulf Way DocFlow Server active on http://0.0.0.0:${PORT}`);
+    });
+  }
 }
 
-startServer();
+if (!process.env.VERCEL) {
+  startServer();
+}
+
+export { app };
+export default app;

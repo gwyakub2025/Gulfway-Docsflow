@@ -53,6 +53,12 @@ export const CompaniesView: React.FC<CompaniesViewProps> = ({
       setShowModal(false);
       setName('');
       setCode('');
+      setTradeLicense('');
+      setTrn('');
+      setAddress('');
+      setPhone('');
+      setEmail('');
+      setStampUrl('');
     } catch (err: any) {
       alert(`Failed to register company: ${err.message}`);
     }

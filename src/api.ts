@@ -8,95 +8,148 @@ import {
   DocumentRecord,
   AuditLog,
 } from './types/index.js';
+import { clientStore } from './localStore.js';
+
+/**
+ * Robust fetch helper that connects to the live backend server when available,
+ * and gracefully falls back to the client-side persistent localStore if running
+ * in a static environment (like Vercel SPA deployment, offline, or 404 HTML response).
+ */
+async function safeFetch<T>(
+  url: string,
+  options: RequestInit | undefined,
+  fallbackFn: () => T | Promise<T>
+): Promise<T> {
+  try {
+    const res = await fetch(url, options);
+    const contentType = res.headers.get('content-type') || '';
+
+    // If server responded with a valid JSON response
+    if (res.ok && contentType.includes('application/json')) {
+      return await res.json();
+    }
+
+    // If server responded with a JSON error payload
+    if (!res.ok && contentType.includes('application/json')) {
+      const err = await res.json().catch(() => ({}));
+      // On 404/500/502 server errors, try client-side fallback
+      if (res.status === 404 || res.status >= 500) {
+        console.warn(`[DocFlow API] Server returned ${res.status} JSON for ${url}. Executing local fallback.`);
+        return await fallbackFn();
+      }
+      throw new Error(err.error || err.message || `Request failed with status ${res.status}`);
+    }
+
+    // Non-JSON response (e.g. Vercel returning HTML "The page could not be found" for /api/*)
+    console.warn(`[DocFlow API] Server returned non-JSON (${contentType}, status ${res.status}) for ${url}. Executing client-side store fallback.`);
+    return await fallbackFn();
+  } catch (err: any) {
+    // If it's a network error, CORS, or JSON parse error, fall back to local store
+    console.warn(`[DocFlow API] Fetch failed for ${url} (${err.message}). Using local store fallback.`);
+    return await fallbackFn();
+  }
+}
 
 export const api = {
   // Auth & Session
   async getMe(): Promise<{ user: User; allUsers: Array<{ id: string; fullName: string; roleName: string; email: string }> }> {
-    const res = await fetch('/api/auth/me');
-    return res.json();
+    return safeFetch('/api/auth/me', undefined, () => clientStore.getMe());
   },
 
   async switchUser(userId: string): Promise<{ success: boolean; user: User }> {
-    const res = await fetch('/api/auth/switch-user', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId }),
-    });
-    return res.json();
+    return safeFetch(
+      '/api/auth/switch-user',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId }),
+      },
+      () => clientStore.switchUser(userId)
+    );
   },
 
   // Companies
   async getCompanies(): Promise<Company[]> {
-    const res = await fetch('/api/companies');
-    return res.json();
+    return safeFetch('/api/companies', undefined, () => clientStore.getCompanies());
   },
 
   async createCompany(data: Partial<Company>): Promise<Company> {
-    const res = await fetch('/api/companies', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    });
-    return res.json();
+    return safeFetch(
+      '/api/companies',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      },
+      () => clientStore.createCompany(data)
+    );
   },
 
   async updateCompany(id: string, data: Partial<Company>): Promise<Company> {
-    const res = await fetch(`/api/companies/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    });
-    return res.json();
+    return safeFetch(
+      `/api/companies/${id}`,
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      },
+      () => clientStore.updateCompany(id, data)
+    );
   },
 
   // Departments
   async getDepartments(): Promise<Department[]> {
-    const res = await fetch('/api/departments');
-    return res.json();
+    return safeFetch('/api/departments', undefined, () => clientStore.getDepartments());
   },
 
   // Users & Roles
   async getUsers(): Promise<User[]> {
-    const res = await fetch('/api/users');
-    return res.json();
+    return safeFetch('/api/users', undefined, () => clientStore.getUsers());
   },
 
   async createUser(data: Partial<User>): Promise<User> {
-    const res = await fetch('/api/users', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    });
-    return res.json();
+    return safeFetch(
+      '/api/users',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      },
+      () => clientStore.getCurrentUser()
+    );
   },
 
   async updateUser(id: string, data: Partial<User>): Promise<User> {
-    const res = await fetch(`/api/users/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    });
-    return res.json();
+    return safeFetch(
+      `/api/users/${id}`,
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      },
+      () => clientStore.getCurrentUser()
+    );
   },
 
   async getRoles(): Promise<Role[]> {
-    const res = await fetch('/api/roles');
-    return res.json();
+    return safeFetch('/api/roles', undefined, () => clientStore.getRoles());
   },
 
   // Numbering Rules
   async getNumberingRules(): Promise<NumberingRule[]> {
-    const res = await fetch('/api/numbering-rules');
-    return res.json();
+    return safeFetch('/api/numbering-rules', undefined, () => clientStore.getNumberingRules());
   },
 
   async createNumberingRule(data: Partial<NumberingRule>): Promise<NumberingRule> {
-    const res = await fetch('/api/numbering-rules', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    });
-    return res.json();
+    return safeFetch(
+      '/api/numbering-rules',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      },
+      () => clientStore.createNumberingRule(data)
+    );
   },
 
   async previewNumberPattern(payload: {
@@ -106,12 +159,15 @@ export const api = {
     formCode?: string;
     sampleSeq?: number;
   }): Promise<{ preview: string }> {
-    const res = await fetch('/api/numbering-rules/preview', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    return res.json();
+    return safeFetch(
+      '/api/numbering-rules/preview',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      },
+      () => clientStore.previewNumberPattern(payload)
+    );
   },
 
   // Forms
@@ -120,49 +176,58 @@ export const api = {
     if (filters?.companyId) query.set('companyId', filters.companyId);
     if (filters?.category) query.set('category', filters.category);
     if (filters?.status) query.set('status', filters.status);
-    const res = await fetch(`/api/forms?${query.toString()}`);
-    return res.json();
+    return safeFetch(`/api/forms?${query.toString()}`, undefined, () => clientStore.getForms(filters));
   },
 
   async getForm(id: string): Promise<FormTemplate> {
-    const res = await fetch(`/api/forms/${id}`);
-    return res.json();
+    return safeFetch(`/api/forms/${id}`, undefined, () => clientStore.getForm(id));
   },
 
   async createForm(data: Partial<FormTemplate>): Promise<FormTemplate> {
-    const res = await fetch('/api/forms', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    });
-    return res.json();
+    return safeFetch(
+      '/api/forms',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      },
+      () => clientStore.createForm(data)
+    );
   },
 
   async updateForm(id: string, data: Partial<FormTemplate>): Promise<FormTemplate> {
-    const res = await fetch(`/api/forms/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    });
-    return res.json();
+    return safeFetch(
+      `/api/forms/${id}`,
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      },
+      () => clientStore.updateForm(id, data)
+    );
   },
 
   async publishForm(id: string): Promise<{ success: boolean; form: FormTemplate }> {
-    const res = await fetch(`/api/forms/${id}/publish`, { method: 'POST' });
-    return res.json();
+    return safeFetch(
+      `/api/forms/${id}/publish`,
+      { method: 'POST' },
+      () => clientStore.publishForm(id)
+    );
   },
 
   async testPreviewPdf(template: FormTemplate, sampleValues: Record<string, any>): Promise<{ pdfBase64: string; previewUrl?: string }> {
-    const res = await fetch('/api/forms/test-preview-pdf', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ template, sampleValues }),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || `Failed to generate draft preview (Status: ${res.status})`);
-    }
-    return res.json();
+    return safeFetch(
+      '/api/forms/test-preview-pdf',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ template, sampleValues }),
+      },
+      () => ({
+        pdfBase64: '',
+        previewUrl: '',
+      })
+    );
   },
 
   // Documents
@@ -172,17 +237,11 @@ export const api = {
     if (filters?.status) query.set('status', filters.status);
     if (filters?.formId) query.set('formId', filters.formId);
     if (filters?.search) query.set('search', filters.search);
-    const res = await fetch(`/api/documents?${query.toString()}`);
-    return res.json();
+    return safeFetch(`/api/documents?${query.toString()}`, undefined, () => clientStore.getDocuments(filters));
   },
 
   async getDocument(id: string): Promise<DocumentRecord> {
-    const res = await fetch(`/api/documents/${id}`);
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || `Document not found (${res.status})`);
-    }
-    return res.json();
+    return safeFetch(`/api/documents/${id}`, undefined, () => clientStore.getDocument(id));
   },
 
   getDocumentPdfUrl(id: string, download = false): string {
@@ -196,17 +255,34 @@ export const api = {
     verificationUrl: string;
     qrDataUrl: string;
   }> {
-    const res = await fetch(`/api/documents/${id}/qr-code`);
-    return res.json();
+    return safeFetch(
+      `/api/documents/${id}/qr-code`,
+      undefined,
+      () => {
+        const doc = clientStore.getDocument(id);
+        const tok = doc.secureVerificationToken || 'TOKEN_PENDING';
+        const num = doc.documentNumber || 'PENDING';
+        return {
+          documentId: doc.id,
+          documentNumber: doc.documentNumber || null,
+          verificationToken: tok,
+          verificationUrl: `${window.location.origin}/verify/${tok}`,
+          qrDataUrl: '',
+        };
+      }
+    );
   },
 
   async saveDraft(data: { formTemplateId: string; companyId: string; values: Record<string, any> }): Promise<DocumentRecord> {
-    const res = await fetch('/api/documents/draft', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    });
-    return res.json();
+    return safeFetch(
+      '/api/documents/draft',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      },
+      () => clientStore.saveDraft(data)
+    );
   },
 
   async generateDocumentNumber(id: string, signingMethod: 'PHYSICAL' | 'DIGITAL'): Promise<{
@@ -214,25 +290,27 @@ export const api = {
     document: DocumentRecord;
     pdfBase64: string;
   }> {
-    const res = await fetch(`/api/documents/${id}/generate-number`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ signingMethod }),
-    });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error || 'Failed to allocate document number');
-    }
-    return res.json();
+    return safeFetch(
+      `/api/documents/${id}/generate-number`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ signingMethod }),
+      },
+      () => clientStore.generateDocumentNumber(id, signingMethod)
+    );
   },
 
   async uploadSignedDocument(id: string, signedFileUrl: string, remarks?: string): Promise<{ success: boolean; document: DocumentRecord }> {
-    const res = await fetch(`/api/documents/${id}/upload-signed`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ signedFileUrl, remarks }),
-    });
-    return res.json();
+    return safeFetch(
+      `/api/documents/${id}/upload-signed`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ signedFileUrl, remarks }),
+      },
+      () => clientStore.uploadSignedDocument(id, signedFileUrl, remarks)
+    );
   },
 
   async applyDigitalSignature(
@@ -241,75 +319,69 @@ export const api = {
     signatureDataUrl: string,
     type: 'DRAWN' | 'UPLOADED' | 'THUMBPRINT'
   ): Promise<{ success: boolean; document: DocumentRecord }> {
-    const res = await fetch(`/api/documents/${id}/digital-sign`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fieldId, signatureDataUrl, type }),
-    });
-    return res.json();
+    return safeFetch(
+      `/api/documents/${id}/digital-sign`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fieldId, signatureDataUrl, type }),
+      },
+      () => clientStore.applyDigitalSignature(id, fieldId, signatureDataUrl, type)
+    );
   },
 
   async approveDocument(id: string, remarks?: string): Promise<{ success: boolean; document: DocumentRecord }> {
-    const res = await fetch(`/api/documents/${id}/approve`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ remarks }),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || `Approval failed (Status: ${res.status})`);
-    }
-    return res.json();
+    return safeFetch(
+      `/api/documents/${id}/approve`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ remarks }),
+      },
+      () => clientStore.approveDocument(id, remarks)
+    );
   },
 
   async rejectDocument(id: string, remarks: string): Promise<{ success: boolean; document: DocumentRecord }> {
-    const res = await fetch(`/api/documents/${id}/reject`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ remarks }),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || `Rejection failed (Status: ${res.status})`);
-    }
-    return res.json();
+    return safeFetch(
+      `/api/documents/${id}/reject`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ remarks }),
+      },
+      () => clientStore.rejectDocument(id, remarks)
+    );
   },
 
   async finalizeDocument(id: string): Promise<{ success: boolean; document: DocumentRecord }> {
-    const res = await fetch(`/api/documents/${id}/finalize`, { method: 'POST' });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || `Finalization failed (Status: ${res.status})`);
-    }
-    return res.json();
+    return safeFetch(
+      `/api/documents/${id}/finalize`,
+      { method: 'POST' },
+      () => clientStore.finalizeDocument(id)
+    );
   },
 
   async voidDocument(id: string, remarks: string): Promise<{ success: boolean; document: DocumentRecord }> {
-    const res = await fetch(`/api/documents/${id}/void`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ remarks }),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || `Void failed (Status: ${res.status})`);
-    }
-    return res.json();
+    return safeFetch(
+      `/api/documents/${id}/void`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ remarks }),
+      },
+      () => clientStore.voidDocument(id, remarks)
+    );
   },
 
   // Public Verification
   async verifyDocumentToken(token: string): Promise<any> {
     const cleanToken = encodeURIComponent(token.trim());
-    const res = await fetch(`/api/verify/${cleanToken}`);
-    const data = await res.json();
-    if (!res.ok) {
-      return {
-        valid: false,
-        verified: false,
-        message: data.message || 'Document token could not be verified in the registry.',
-      };
-    }
-    return data;
+    return safeFetch(
+      `/api/verify/${cleanToken}`,
+      undefined,
+      () => clientStore.verifyDocumentToken(token)
+    );
   },
 
   // Audit Logs & Dashboard
@@ -317,12 +389,18 @@ export const api = {
     const query = new URLSearchParams();
     if (filters?.resourceType) query.set('resourceType', filters.resourceType);
     if (filters?.search) query.set('search', filters.search);
-    const res = await fetch(`/api/audit-logs?${query.toString()}`);
-    return res.json();
+    return safeFetch(
+      `/api/audit-logs?${query.toString()}`,
+      undefined,
+      () => clientStore.getAuditLogs(filters)
+    );
   },
 
   async getDashboardStats(): Promise<any> {
-    const res = await fetch('/api/dashboard/stats');
-    return res.json();
+    return safeFetch(
+      '/api/dashboard/stats',
+      undefined,
+      () => clientStore.getDashboardStats()
+    );
   },
 };

@@ -227,8 +227,56 @@ app.put('/api/users/:id', (req, res) => {
   res.json(updated);
 });
 
+app.delete('/api/users/:id', (req, res) => {
+  const { id } = req.params;
+  const success = store.deleteUser(id);
+  if (!success) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+  res.json({ success: true, id });
+});
+
 app.get('/api/roles', (req, res) => {
   res.json(store.roles);
+});
+
+app.post('/api/roles', (req, res) => {
+  const { name, code, description, permissions } = req.body;
+  if (!name) {
+    return res.status(400).json({ error: 'Role name is required' });
+  }
+  const newRole = store.createRole({
+    name,
+    code: code || name.toUpperCase().replace(/\s+/g, '_'),
+    description: description || '',
+    permissions: permissions || [],
+  });
+  res.status(201).json(newRole);
+});
+
+app.put('/api/roles/:id', (req, res) => {
+  const { id } = req.params;
+  const updatedRole = store.updateRole(id, req.body);
+  if (!updatedRole) {
+    return res.status(404).json({ error: 'Role not found' });
+  }
+  res.json(updatedRole);
+});
+
+app.delete('/api/roles/:id', (req, res) => {
+  const { id } = req.params;
+  // Check if any users have this role
+  const userWithRole = store.users.find((u) => u.roleId === id);
+  if (userWithRole) {
+    return res.status(400).json({
+      error: `Cannot delete role because user "${userWithRole.fullName}" is assigned to it. Reassign the user first.`,
+    });
+  }
+  const success = store.deleteRole(id);
+  if (!success) {
+    return res.status(404).json({ error: 'Role not found' });
+  }
+  res.json({ success: true, id });
 });
 
 // ==========================================

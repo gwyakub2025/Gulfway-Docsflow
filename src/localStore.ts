@@ -661,8 +661,116 @@ class ClientLocalStorageStore {
     return this.data.users;
   }
 
+  public createUser(data: Partial<User>): User {
+    const user = this.getCurrentUser();
+    const role = this.data.roles.find((r) => r.id === data.roleId) || this.data.roles[0];
+    const newUser: User = {
+      id: `usr-${Date.now()}`,
+      fullName: data.fullName || 'New User',
+      employeeId: data.employeeId || `EMP-${Math.floor(100 + Math.random() * 900)}`,
+      email: data.email || 'user@example.com',
+      phone: data.phone || '',
+      companyId: data.companyId || 'comp-gwds',
+      companyIds: data.companyIds || [data.companyId || 'comp-gwds'],
+      departmentId: data.departmentId || 'dept-ops',
+      designation: data.designation || 'Staff',
+      roleId: role.id,
+      roleName: role.name,
+      permissions: role.permissions,
+      status: data.status || 'ACTIVE',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    this.data.users.push(newUser);
+    this.recordAudit(user.id, user.fullName, 'User Created', 'USER', newUser.id, `${newUser.fullName} (${newUser.roleName})`);
+    this.saveToStorage();
+    return newUser;
+  }
+
+  public updateUser(id: string, data: Partial<User>): User {
+    const user = this.getCurrentUser();
+    const idx = this.data.users.findIndex((u) => u.id === id);
+    if (idx === -1) throw new Error('User not found');
+    const existing = this.data.users[idx];
+    const updated = {
+      ...existing,
+      ...data,
+      updatedAt: new Date().toISOString(),
+    };
+    if (data.roleId && data.roleId !== existing.roleId) {
+      const role = this.data.roles.find((r) => r.id === data.roleId);
+      if (role) {
+        updated.roleName = role.name;
+        updated.permissions = role.permissions;
+      }
+    }
+    this.data.users[idx] = updated;
+    this.recordAudit(user.id, user.fullName, 'User Updated', 'USER', id, `Updated ${updated.fullName}`);
+    this.saveToStorage();
+    return updated;
+  }
+
+  public deleteUser(id: string): { success: boolean; id: string } {
+    const user = this.getCurrentUser();
+    const idx = this.data.users.findIndex((u) => u.id === id);
+    if (idx === -1) throw new Error('User not found');
+    const removed = this.data.users.splice(idx, 1)[0];
+    this.recordAudit(user.id, user.fullName, 'User Deleted', 'USER', id, `Deleted user ${removed.fullName}`);
+    this.saveToStorage();
+    return { success: true, id };
+  }
+
   public getRoles(): Role[] {
     return this.data.roles;
+  }
+
+  public createRole(data: Partial<Role>): Role {
+    const user = this.getCurrentUser();
+    const newRole: Role = {
+      id: `role-${Date.now()}`,
+      code: (data.code || `ROLE_${Date.now()}`).toUpperCase(),
+      name: data.name || 'Custom Role',
+      description: data.description || 'Custom defined role',
+      isSystem: false,
+      permissions: data.permissions || ['DOCUMENT_VIEW', 'DOCUMENT_DOWNLOAD'],
+    };
+    this.data.roles.push(newRole);
+    this.recordAudit(user.id, user.fullName, 'Role Created', 'AUTH', newRole.id, `Created ${newRole.name}`);
+    this.saveToStorage();
+    return newRole;
+  }
+
+  public updateRole(id: string, data: Partial<Role>): Role {
+    const user = this.getCurrentUser();
+    const idx = this.data.roles.findIndex((r) => r.id === id);
+    if (idx === -1) throw new Error('Role not found');
+    const existing = this.data.roles[idx];
+    const updated: Role = {
+      ...existing,
+      ...data,
+      id: existing.id,
+      isSystem: existing.isSystem,
+    };
+    this.data.roles[idx] = updated;
+    this.data.users.forEach((u) => {
+      if (u.roleId === id) {
+        if (data.name) u.roleName = data.name;
+        if (data.permissions) u.permissions = data.permissions;
+      }
+    });
+    this.recordAudit(user.id, user.fullName, 'Role Updated', 'AUTH', id, `Updated role ${updated.name}`);
+    this.saveToStorage();
+    return updated;
+  }
+
+  public deleteRole(id: string): { success: boolean; id: string } {
+    const user = this.getCurrentUser();
+    const idx = this.data.roles.findIndex((r) => r.id === id);
+    if (idx === -1) throw new Error('Role not found');
+    const removed = this.data.roles.splice(idx, 1)[0];
+    this.recordAudit(user.id, user.fullName, 'Role Deleted', 'AUTH', id, `Deleted role ${removed.name}`);
+    this.saveToStorage();
+    return { success: true, id };
   }
 
   public getNumberingRules(): NumberingRule[] {

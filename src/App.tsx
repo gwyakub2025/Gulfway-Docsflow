@@ -447,7 +447,68 @@ export function App() {
 
               {/* USERS & ROLES TAB */}
               {currentTab === 'users-roles' && (
-                <UsersRolesView users={users} roles={roles} companies={companies} />
+                <UsersRolesView
+                  users={users}
+                  roles={roles}
+                  companies={companies}
+                  currentUser={currentUser}
+                  onUserCreated={(newUser) => {
+                    setUsers([...users, newUser]);
+                    setAllUsersList([
+                      ...allUsersList,
+                      {
+                        id: newUser.id,
+                        fullName: newUser.fullName,
+                        employeeId: newUser.employeeId,
+                        roleName: newUser.roleName,
+                        email: newUser.email,
+                      },
+                    ]);
+                  }}
+                  onUserUpdated={(updatedUser) => {
+                    setUsers(users.map((u) => (u.id === updatedUser.id ? updatedUser : u)));
+                    setAllUsersList(
+                      allUsersList.map((u) =>
+                        u.id === updatedUser.id
+                          ? {
+                              id: updatedUser.id,
+                              fullName: updatedUser.fullName,
+                              employeeId: updatedUser.employeeId,
+                              roleName: updatedUser.roleName,
+                              email: updatedUser.email,
+                            }
+                          : u
+                      )
+                    );
+                    if (currentUser?.id === updatedUser.id) {
+                      setCurrentUser(updatedUser);
+                    }
+                  }}
+                  onUserDeleted={(deletedId) => {
+                    const remaining = users.filter((u) => u.id !== deletedId);
+                    setUsers(remaining);
+                    setAllUsersList(allUsersList.filter((u) => u.id !== deletedId));
+                    if (currentUser?.id === deletedId && remaining.length > 0) {
+                      setCurrentUser(remaining[0]);
+                    }
+                  }}
+                  onRoleCreated={(newRole) => {
+                    setRoles([...roles, newRole]);
+                  }}
+                  onRoleUpdated={(updatedRole) => {
+                    setRoles(roles.map((r) => (r.id === updatedRole.id ? updatedRole : r)));
+                    if (currentUser?.roleId === updatedRole.id) {
+                      setCurrentUser({
+                        ...currentUser,
+                        roleName: updatedRole.name,
+                        permissions: updatedRole.permissions,
+                      });
+                    }
+                  }}
+                  onRoleDeleted={(deletedId) => {
+                    setRoles(roles.filter((r) => r.id !== deletedId));
+                  }}
+                />
               )}
 
               {/* AUDIT LOGS TAB */}

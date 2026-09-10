@@ -135,7 +135,7 @@ export const api = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       },
-      () => clientStore.getCurrentUser()
+      () => clientStore.createUser(data)
     );
   },
 
@@ -147,12 +147,56 @@ export const api = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       },
-      () => clientStore.getCurrentUser()
+      () => clientStore.updateUser(id, data)
+    );
+  },
+
+  async deleteUser(id: string): Promise<{ success: boolean; id: string }> {
+    return safeFetch(
+      `/api/users/${id}`,
+      {
+        method: 'DELETE',
+      },
+      () => clientStore.deleteUser(id)
     );
   },
 
   async getRoles(): Promise<Role[]> {
     return safeFetch('/api/roles', undefined, () => clientStore.getRoles());
+  },
+
+  async createRole(data: Partial<Role>): Promise<Role> {
+    return safeFetch(
+      '/api/roles',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      },
+      () => clientStore.createRole(data)
+    );
+  },
+
+  async updateRole(id: string, data: Partial<Role>): Promise<Role> {
+    return safeFetch(
+      `/api/roles/${id}`,
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      },
+      () => clientStore.updateRole(id, data)
+    );
+  },
+
+  async deleteRole(id: string): Promise<{ success: boolean; id: string }> {
+    return safeFetch(
+      `/api/roles/${id}`,
+      {
+        method: 'DELETE',
+      },
+      () => clientStore.deleteRole(id)
+    );
   },
 
   // Numbering Rules

@@ -1343,6 +1343,68 @@ class InMemoryStore {
     return true;
   }
 
+  public deleteUser(id: string): boolean {
+    const idx = this.users.findIndex((u) => u.id === id);
+    if (idx === -1) return false;
+    const removed = this.users.splice(idx, 1)[0];
+    this.recordAudit('usr-admin', 'Super Administrator', 'User Deleted', 'USER', id, {
+      remarks: `Deleted user: ${removed.fullName} (${removed.roleName}, ${removed.email})`,
+    });
+    return true;
+  }
+
+  public createRole(roleData: Partial<Role>): Role {
+    const newRole: Role = {
+      id: `role-${Date.now()}`,
+      code: (roleData.code || `ROLE_${Date.now()}`).toUpperCase(),
+      name: roleData.name || 'Custom Role',
+      description: roleData.description || 'Custom defined role with selected permissions',
+      isSystem: false,
+      permissions: roleData.permissions || ['DOCUMENT_VIEW', 'DOCUMENT_DOWNLOAD'],
+    };
+    this.roles.push(newRole);
+    this.recordAudit('usr-admin', 'Super Administrator', 'Role Created', 'AUTH', newRole.id, {
+      remarks: `Created role: ${newRole.name} with ${newRole.permissions.length} capabilities`,
+    });
+    return newRole;
+  }
+
+  public updateRole(id: string, updates: Partial<Role>): Role | null {
+    const idx = this.roles.findIndex((r) => r.id === id);
+    if (idx === -1) return null;
+    const existing = this.roles[idx];
+    const updated: Role = {
+      ...existing,
+      ...updates,
+      id: existing.id,
+      isSystem: existing.isSystem, // preserve system flag
+    };
+    this.roles[idx] = updated;
+
+    // Update users who have this role assigned
+    this.users.forEach((u) => {
+      if (u.roleId === id) {
+        if (updates.name) u.roleName = updates.name;
+        if (updates.permissions) u.permissions = updates.permissions;
+      }
+    });
+
+    this.recordAudit('usr-admin', 'Super Administrator', 'Role Updated', 'AUTH', id, {
+      remarks: `Updated role: ${updated.name}`,
+    });
+    return updated;
+  }
+
+  public deleteRole(id: string): boolean {
+    const idx = this.roles.findIndex((r) => r.id === id);
+    if (idx === -1) return false;
+    const removed = this.roles.splice(idx, 1)[0];
+    this.recordAudit('usr-admin', 'Super Administrator', 'Role Deleted', 'AUTH', id, {
+      remarks: `Deleted role: ${removed.name} (${removed.code})`,
+    });
+    return true;
+  }
+
   public clearSampleData(): void {
     this.companies = [];
     this.documents = [];

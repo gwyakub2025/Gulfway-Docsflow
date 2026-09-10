@@ -291,14 +291,18 @@ export const DocumentDetails: React.FC<DocumentDetailsProps> = ({
           </button>
 
           {/* PDF Download Button */}
-          <button
+          <a
+            href={pdfDownloadUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            download={`${document.documentNumber || 'DOCUMENT'}.pdf`}
             onClick={() => downloadPdfFromUrl(pdfDownloadUrl, `${document.documentNumber || 'DOCUMENT'}.pdf`)}
-            className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs"
+            className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs cursor-pointer inline-flex"
             title="Download official PDF file"
           >
-            <Download className="w-4 h-4" />
+            <Download className="w-4 h-4 text-slate-600" />
             <span>Download PDF</span>
-          </button>
+          </a>
 
           {/* Edit Information Button (Available for non-final, non-void docs) */}
           {document.status !== 'FINAL' && document.status !== 'VOID' && (
@@ -582,13 +586,17 @@ export const DocumentDetails: React.FC<DocumentDetailsProps> = ({
                   <Maximize2 className="w-3.5 h-3.5" />
                   <span>Full Screen</span>
                 </button>
-                <button
+                <a
+                  href={pdfDownloadUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  download={`${document.documentNumber || 'DOCUMENT'}.pdf`}
                   onClick={() => downloadPdfFromUrl(pdfDownloadUrl, `${document.documentNumber || 'DOCUMENT'}.pdf`)}
-                  className="px-2.5 py-1 text-slate-600 hover:text-blue-600 hover:bg-blue-50 rounded text-xs font-semibold flex items-center gap-1 transition-colors"
+                  className="px-2.5 py-1 text-slate-600 hover:text-blue-600 hover:bg-blue-50 rounded text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer inline-flex"
                 >
                   <Download className="w-3.5 h-3.5" />
                   <span>Download</span>
-                </button>
+                </a>
               </div>
             </div>
 

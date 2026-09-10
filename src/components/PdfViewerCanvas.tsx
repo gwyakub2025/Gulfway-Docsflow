@@ -15,7 +15,7 @@ import {
   AlertCircle,
   X,
 } from 'lucide-react';
-import { downloadPdfFromUrl, downloadPdfFromBase64 } from '../utils/pdfDownloadHelper.js';
+import { downloadPdfFromUrl, downloadPdfFromBase64, printDocumentCanvas } from '../utils/pdfDownloadHelper.js';
 
 // Ensure PDF.js worker is configured
 try {
@@ -234,7 +234,9 @@ export const PdfViewerCanvas: React.FC<PdfViewerCanvasProps> = ({
 
   // Print current PDF
   const handlePrint = () => {
-    if (rawPdfBytes) {
+    if (canvasRef.current) {
+      printDocumentCanvas(canvasRef.current, `${documentNumber} - ${title}`);
+    } else if (rawPdfBytes) {
       const blob = new Blob([rawPdfBytes], { type: 'application/pdf' });
       const blobUrl = window.URL.createObjectURL(blob);
       const printWindow = window.open(blobUrl, '_blank');
@@ -243,6 +245,12 @@ export const PdfViewerCanvas: React.FC<PdfViewerCanvasProps> = ({
       }
     }
   };
+
+  const resolvedDownloadUrl = pdfUrl
+    ? pdfUrl.includes('download=')
+      ? pdfUrl
+      : `${pdfUrl}${pdfUrl.includes('?') ? '&' : '?'}download=true`
+    : undefined;
 
   return (
     <div className={`flex flex-col h-full bg-slate-900 text-slate-100 rounded-xl overflow-hidden shadow-2xl border border-slate-700 ${className}`}>
@@ -316,7 +324,18 @@ export const PdfViewerCanvas: React.FC<PdfViewerCanvasProps> = ({
 
         {/* Right Actions: Download, Open in New Tab, Close */}
         <div className="flex items-center gap-2">
-          {showOpenInNewTabButton && (
+          {showOpenInNewTabButton && pdfUrl ? (
+            <a
+              href={pdfUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-2.5 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer inline-flex"
+              title="Open document in a new browser tab with native controls"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">New Tab</span>
+            </a>
+          ) : showOpenInNewTabButton ? (
             <button
               onClick={handleOpenInNewTab}
               className="px-2.5 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors"
@@ -325,17 +344,33 @@ export const PdfViewerCanvas: React.FC<PdfViewerCanvasProps> = ({
               <ExternalLink className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">New Tab</span>
             </button>
-          )}
+          ) : null}
 
           <button
             onClick={handlePrint}
-            className="p-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-xs transition-colors"
-            title="Print PDF"
+            className="p-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-xs transition-colors cursor-pointer"
+            title="Print PDF / Save as PDF"
           >
             <Printer className="w-3.5 h-3.5" />
           </button>
 
-          {showDownloadButton && (
+          {showDownloadButton && resolvedDownloadUrl ? (
+            <a
+              href={resolvedDownloadUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              download={`${documentNumber}.pdf`}
+              onClick={() => handleDownload()}
+              className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer inline-flex"
+            >
+              {isDownloading ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Download className="w-3.5 h-3.5" />
+              )}
+              <span>{isDownloading ? 'Downloading...' : 'Download PDF'}</span>
+            </a>
+          ) : showDownloadButton ? (
             <button
               onClick={handleDownload}
               disabled={isDownloading}
@@ -348,7 +383,7 @@ export const PdfViewerCanvas: React.FC<PdfViewerCanvasProps> = ({
               )}
               <span>{isDownloading ? 'Downloading...' : 'Download PDF'}</span>
             </button>
-          )}
+          ) : null}
 
           {onClose && (
             <button

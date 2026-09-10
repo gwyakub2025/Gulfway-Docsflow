@@ -622,8 +622,16 @@ app.get('/api/forms/preview-session/:token', (req, res) => {
   if (!session) {
     return res.status(404).send('Preview session expired or not found');
   }
+  const isDownload = req.query.download === 'true';
   res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', 'inline; filename="draft-preview.pdf"');
+  res.setHeader('Content-Length', String(session.bytes.length));
+  res.setHeader(
+    'Content-Disposition',
+    `${isDownload ? 'attachment' : 'inline'}; filename="draft-preview.pdf"`
+  );
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, Content-Length');
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   res.send(Buffer.from(session.bytes));
 });
 
@@ -731,11 +739,18 @@ app.get('/api/documents/:id/pdf', async (req, res) => {
     });
 
     const isDownload = req.query.download === 'true';
+    const cleanFilename = (doc.documentNumber || 'DOCUMENT').replace(/[/\\?%*:|"<>]/g, '-');
     res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Length', String(generated.pdfBytes.length));
     res.setHeader(
       'Content-Disposition',
-      `${isDownload ? 'attachment' : 'inline'}; filename="${doc.documentNumber || 'DOCUMENT'}.pdf"`
+      `${isDownload ? 'attachment' : 'inline'}; filename="${cleanFilename}.pdf"`
     );
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, Content-Length');
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
     res.send(Buffer.from(generated.pdfBytes));
   } catch (err: any) {
     res.status(500).send(`Failed to generate PDF: ${err.message}`);

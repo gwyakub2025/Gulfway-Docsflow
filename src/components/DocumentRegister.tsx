@@ -300,7 +300,11 @@ export const DocumentRegister: React.FC<DocumentRegisterProps> = ({
 
                           {/* Download PDF button */}
                           {doc.documentNumber && (
-                            <button
+                            <a
+                              href={`/api/documents/${doc.id}/pdf?download=true`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              download={`${doc.documentNumber}.pdf`}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 downloadPdfFromUrl(
@@ -308,11 +312,11 @@ export const DocumentRegister: React.FC<DocumentRegisterProps> = ({
                                   `${doc.documentNumber}.pdf`
                                 );
                               }}
-                              className="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-md transition-colors"
-                              title="Download PDF"
+                              className="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-md transition-colors cursor-pointer inline-flex items-center justify-center"
+                              title="Download Official PDF"
                             >
-                              <Download className="w-4 h-4" />
-                            </button>
+                              <Download className="w-4 h-4 text-slate-600" />
+                            </a>
                           )}
 
                           {/* View Document Details */}

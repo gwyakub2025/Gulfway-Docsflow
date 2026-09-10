@@ -155,6 +155,20 @@ app.get('/api/departments', (req, res) => {
   res.json(store.departments);
 });
 
+app.post('/api/departments', (req, res) => {
+  const { name, code } = req.body;
+  if (!name) return res.status(400).json({ error: 'Department name is required' });
+  const newDept = store.createDepartment({ name, code });
+  res.status(201).json(newDept);
+});
+
+app.delete('/api/departments/:id', (req, res) => {
+  const { id } = req.params;
+  const success = store.deleteDepartment(id);
+  if (!success) return res.status(404).json({ error: 'Department not found' });
+  res.json({ success: true, id });
+});
+
 // ==========================================
 // 3. USERS & ROLES
 // ==========================================
@@ -325,6 +339,22 @@ app.post('/api/numbering-rules/preview', (req, res) => {
   res.json({ preview });
 });
 
+app.put('/api/numbering-rules/:id', (req, res) => {
+  if (!checkPermission(req, res, 'NUMBERING_MANAGE')) return;
+  const { id } = req.params;
+  const updated = store.updateNumberingRule(id, req.body);
+  if (!updated) return res.status(404).json({ error: 'Numbering rule not found' });
+  res.json(updated);
+});
+
+app.delete('/api/numbering-rules/:id', (req, res) => {
+  if (!checkPermission(req, res, 'NUMBERING_MANAGE')) return;
+  const { id } = req.params;
+  const success = store.deleteNumberingRule(id);
+  if (!success) return res.status(404).json({ error: 'Numbering rule not found' });
+  res.json({ success: true, id });
+});
+
 // ==========================================
 // 5. FORM BUILDER & TEMPLATES
 // ==========================================
@@ -478,6 +508,14 @@ app.post('/api/forms/:id/publish', (req, res) => {
   });
 
   res.json({ success: true, form });
+});
+
+app.delete('/api/forms/:id', (req, res) => {
+  if (!checkPermission(req, res, 'FORM_DELETE')) return;
+  const { id } = req.params;
+  const success = store.deleteForm(id);
+  if (!success) return res.status(404).json({ error: 'Form not found' });
+  res.json({ success: true, id });
 });
 
 // Ephemeral preview cache for live form previews
@@ -1131,6 +1169,14 @@ app.post('/api/documents/:id/void', (req, res) => {
   });
 
   res.json({ success: true, document: doc });
+});
+
+app.delete('/api/documents/:id', (req, res) => {
+  const { id } = req.params;
+  const doc = store.documents.find((d) => d.id === id);
+  if (!doc) return res.status(404).json({ error: 'Document not found' });
+  const success = store.deleteDocument(id);
+  res.json({ success, id });
 });
 
 // ==========================================

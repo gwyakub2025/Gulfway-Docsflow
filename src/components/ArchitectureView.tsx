@@ -21,7 +21,11 @@ import {
   ExternalLink,
 } from 'lucide-react';
 
-export const ArchitectureView: React.FC = () => {
+export interface ArchitectureViewProps {
+  onNavigate?: (tab: string) => void;
+}
+
+export const ArchitectureView: React.FC<ArchitectureViewProps> = ({ onNavigate }) => {
   const [activeStep, setActiveStep] = useState<number>(1);
 
   const workflowSteps = [
@@ -32,6 +36,7 @@ export const ArchitectureView: React.FC = () => {
       title: 'Register Operating Company',
       actor: 'Super Administrator',
       module: 'Companies Tab',
+      tab: 'companies',
       summary: 'Register the legal entity (GWDS, GWT, GWL) with its UAE Trade License, TRN, and Official Stamp.',
       details:
         'All numbering patterns, letterheads, and stamps are scoped to a legal entity. A document cannot be generated without an underlying company.',
@@ -48,6 +53,7 @@ export const ArchitectureView: React.FC = () => {
       title: 'Configure Users, Departments & Roles',
       actor: 'Super Administrator',
       module: 'Users & Roles Tab',
+      tab: 'users-roles',
       summary: 'Set up organizational departments (HR, Fleet/OPS, Finance) and grant RBAC permissions to staff.',
       details:
         'Assign users to entities and departments. Roles dictate who can draft, who can allocate sequential numbers, who can sign, and who can approve.',
@@ -64,6 +70,7 @@ export const ArchitectureView: React.FC = () => {
       title: 'Establish Numbering Rules & Counter Registers',
       actor: 'Compliance & Systems Admin',
       module: 'Numbering Rules Tab',
+      tab: 'numbering-rules',
       summary: 'Define atomic, tamper-proof pattern formulas and yearly sequence reset intervals.',
       details:
         'Formula standard: {COMPANY}-{DEPT}-{FORM}-{YYYY}-{SEQ:6}. Initial starting sequence counter (e.g., 1000) and padding zeros are locked into server memory.',
@@ -80,6 +87,7 @@ export const ArchitectureView: React.FC = () => {
       title: 'Publish Form Templates & Signature Slots',
       actor: 'Department Lead / Admin',
       module: 'Forms Catalog & Form Builder',
+      tab: 'form-builder',
       summary: 'Link forms to numbering rules, define input fields, and set digital signature / QR coordinates.',
       details:
         'Templates define what data needs to be captured (e.g. Leave dates, motorcycle plate number, advance sum). Once published, versions are immutable (v1, v2).',
@@ -96,6 +104,7 @@ export const ArchitectureView: React.FC = () => {
       title: 'Draft Document Request (Zero Number Allocated)',
       actor: 'Employee / Rider / Initiator',
       module: 'Dashboard / Create Document',
+      tab: 'create-document',
       summary: 'Select an active form template, fill in applicant values, and save as working draft.',
       details:
         'CRITICAL COMPLIANCE DIRECTIVE: No sequential number is allocated during drafting. This guarantees that unsubmitted or abandoned drafts do not consume sequence numbers or leave audit gaps.',
@@ -111,7 +120,8 @@ export const ArchitectureView: React.FC = () => {
       phase: 'Atomic Allocation',
       title: 'Allocate Official Number & Generate QR Verification',
       actor: 'Server-Side Engine (Automated)',
-      module: 'Backend Atomic Engine',
+      module: 'Document Register',
+      tab: 'document-register',
       summary: 'System atomically increments sequence counter and burns the official number and verification QR into PDF.',
       details:
         'An unforgeable 32-character verification token is minted. Document transitions to AWAITING_SIGNATURE. The official PDF is generated with company letterhead, official stamp, and dynamic QR code.',
@@ -128,6 +138,7 @@ export const ArchitectureView: React.FC = () => {
       title: 'Execute Signature (Digital Pad or Physical Wet-Ink)',
       actor: 'Applicant / Assigned Signer',
       module: 'Pending Signatures View',
+      tab: 'pending-signatures',
       summary: 'Sign digitally via HTML5 canvas pad with cryptographic metadata, or print and scan physical wet-ink copy.',
       details:
         'Digital mode records signer IP, timestamp, role, and drawn vector. Physical mode allows printing the official numbered PDF and uploading the scanned wet-ink copy with physical company stamp.',
@@ -144,6 +155,7 @@ export const ArchitectureView: React.FC = () => {
       title: 'Supervisor / Manager Approval',
       actor: 'Authorized Department Approver',
       module: 'Pending Approvals View',
+      tab: 'pending-approvals',
       summary: 'Manager inspects document data, verified signatures, and either approves sanction or returns with remarks.',
       details:
         'Supervisors review compliance. Approval appends to the approval history trail in the ledger. Rejection marks document REJECTED without recycling the allocated number.',
@@ -160,6 +172,7 @@ export const ArchitectureView: React.FC = () => {
       title: 'Finalize & Compute SHA-256 Tamper-Evident Seal',
       actor: 'System / Compliance Lead',
       module: 'Document Details -> Finalize',
+      tab: 'document-register',
       summary: 'Document transitions to immutable FINAL status. Server computes SHA-256 hash of entire payload.',
       details:
         'Once finalized, the document can never be edited or altered. If any change occurs, the SHA-256 hash validation will immediately alert of tampering.',
@@ -176,6 +189,7 @@ export const ArchitectureView: React.FC = () => {
       title: 'Public Authenticity Verification',
       actor: 'Auditors, Traffic Police, Client Inspectors',
       module: 'Public Portal /verify/:token',
+      tab: 'verify',
       summary: 'Anyone scanning the QR code or entering the token verifies the authentic record against the official registry.',
       details:
         'The public verification portal displays issuance entity, date, authorized signers, document type, status, and SHA-256 checksum without exposing confidential private values.',
@@ -329,6 +343,16 @@ export const ArchitectureView: React.FC = () => {
               <div className="text-xs font-mono font-semibold text-emerald-400">
                 {currentStepData.module}
               </div>
+              {onNavigate && (
+                <button
+                  type="button"
+                  onClick={() => onNavigate(currentStepData.tab)}
+                  className="mt-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                >
+                  <span>Open {currentStepData.module}</span>
+                  <ExternalLink className="w-3 h-3" />
+                </button>
+              )}
             </div>
           </div>
 

@@ -11,6 +11,7 @@ import {
   ArrowUpRight,
   PlusCircle,
   Eye,
+  BarChart3,
 } from 'lucide-react';
 import { StatusBadge } from './StatusBadge.js';
 import { DocumentRecord, FormTemplate } from '../types/index.js';
@@ -68,6 +69,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
           >
             <PlusCircle className="w-4 h-4" />
             <span>Generate Document</span>
+          </button>
+          <button
+            onClick={() => onNavigateTab('analytics')}
+            className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-sm transition-all"
+          >
+            <BarChart3 className="w-4 h-4" />
+            <span>Analytics</span>
           </button>
           <button
             onClick={() => onNavigateTab('form-builder')}

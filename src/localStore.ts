@@ -657,6 +657,25 @@ class ClientLocalStorageStore {
     return this.data.departments;
   }
 
+  public createDepartment(data: Partial<Department>): Department {
+    const newDept: Department = {
+      id: `dept-${Date.now()}`,
+      code: (data.code || 'DEPT').toUpperCase(),
+      name: data.name || 'New Department',
+    };
+    this.data.departments.push(newDept);
+    this.saveToStorage();
+    return newDept;
+  }
+
+  public deleteDepartment(id: string): { success: boolean; id: string } {
+    const idx = this.data.departments.findIndex((d) => d.id === id);
+    if (idx === -1) throw new Error('Department not found');
+    this.data.departments.splice(idx, 1);
+    this.saveToStorage();
+    return { success: true, id };
+  }
+
   public getUsers(): User[] {
     return this.data.users;
   }
@@ -799,6 +818,33 @@ class ClientLocalStorageStore {
     return newRule;
   }
 
+  public updateNumberingRule(id: string, data: Partial<NumberingRule>): NumberingRule {
+    const user = this.getCurrentUser();
+    const idx = this.data.numberingRules.findIndex((r) => r.id === id);
+    if (idx === -1) throw new Error('Numbering rule not found');
+    const existing = this.data.numberingRules[idx];
+    const updated: NumberingRule = {
+      ...existing,
+      ...data,
+      id: existing.id,
+      updatedAt: new Date().toISOString(),
+    };
+    this.data.numberingRules[idx] = updated;
+    this.recordAudit(user.id, user.fullName, 'Numbering Rule Updated', 'NUMBERING', id, updated.pattern);
+    this.saveToStorage();
+    return updated;
+  }
+
+  public deleteNumberingRule(id: string): { success: boolean; id: string } {
+    const user = this.getCurrentUser();
+    const idx = this.data.numberingRules.findIndex((r) => r.id === id);
+    if (idx === -1) throw new Error('Numbering rule not found');
+    const removed = this.data.numberingRules.splice(idx, 1)[0];
+    this.recordAudit(user.id, user.fullName, 'Numbering Rule Deleted', 'NUMBERING', id, `Deleted ${removed.name}`);
+    this.saveToStorage();
+    return { success: true, id };
+  }
+
   public previewNumberPattern(payload: {
     pattern: string;
     companyCode?: string;
@@ -897,6 +943,16 @@ class ClientLocalStorageStore {
     form.updatedAt = new Date().toISOString();
     this.saveToStorage();
     return { success: true, form };
+  }
+
+  public deleteForm(id: string): { success: boolean; id: string } {
+    const user = this.getCurrentUser();
+    const idx = this.data.formTemplates.findIndex((f) => f.id === id);
+    if (idx === -1) throw new Error('Form not found');
+    const removed = this.data.formTemplates.splice(idx, 1)[0];
+    this.recordAudit(user.id, user.fullName, 'Form Deleted', 'FORM', id, `Deleted ${removed.formName}`);
+    this.saveToStorage();
+    return { success: true, id };
   }
 
   public getDocuments(filters?: { companyId?: string; status?: string; formId?: string; search?: string }): DocumentRecord[] {
@@ -1177,6 +1233,16 @@ class ClientLocalStorageStore {
     this.recordAudit(user.id, user.fullName, 'Document Voided', 'DOCUMENT', doc.id, remarks);
     this.saveToStorage();
     return { success: true, document: doc };
+  }
+
+  public deleteDocument(id: string): { success: boolean; id: string } {
+    const user = this.getCurrentUser();
+    const idx = this.data.documents.findIndex((d) => d.id === id);
+    if (idx === -1) throw new Error('Document not found');
+    const removed = this.data.documents.splice(idx, 1)[0];
+    this.recordAudit(user.id, user.fullName, 'Document Deleted', 'DOCUMENT', id, `Deleted ${removed.documentNumber || removed.id}`);
+    this.saveToStorage();
+    return { success: true, id };
   }
 
   public verifyDocumentToken(token: string) {

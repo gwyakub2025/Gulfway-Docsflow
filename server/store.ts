@@ -1405,6 +1405,76 @@ class InMemoryStore {
     return true;
   }
 
+  public updateNumberingRule(id: string, updates: Partial<NumberingRule>): NumberingRule | null {
+    const idx = this.numberingRules.findIndex((r) => r.id === id);
+    if (idx === -1) return null;
+    const existing = this.numberingRules[idx];
+    const updated: NumberingRule = {
+      ...existing,
+      ...updates,
+      id: existing.id,
+      updatedAt: new Date().toISOString(),
+    };
+    this.numberingRules[idx] = updated;
+    this.recordAudit('usr-admin', 'Super Administrator', 'Numbering Rule Updated', 'NUMBERING', id, {
+      newValue: `${updated.name}: ${updated.pattern}`,
+    });
+    return updated;
+  }
+
+  public deleteNumberingRule(id: string): boolean {
+    const idx = this.numberingRules.findIndex((r) => r.id === id);
+    if (idx === -1) return false;
+    const removed = this.numberingRules.splice(idx, 1)[0];
+    this.recordAudit('usr-admin', 'Super Administrator', 'Numbering Rule Deleted', 'NUMBERING', id, {
+      remarks: `Deleted numbering rule: ${removed.name} (${removed.pattern})`,
+    });
+    return true;
+  }
+
+  public deleteForm(id: string): boolean {
+    const idx = this.formTemplates.findIndex((f) => f.id === id);
+    if (idx === -1) return false;
+    const removed = this.formTemplates.splice(idx, 1)[0];
+    this.recordAudit('usr-admin', 'Super Administrator', 'Form Deleted', 'FORM', id, {
+      remarks: `Deleted form: ${removed.formName} (${removed.formCode})`,
+    });
+    return true;
+  }
+
+  public deleteDocument(id: string): boolean {
+    const idx = this.documents.findIndex((d) => d.id === id);
+    if (idx === -1) return false;
+    const removed = this.documents.splice(idx, 1)[0];
+    this.recordAudit('usr-admin', 'Super Administrator', 'Document Deleted', 'DOCUMENT', id, {
+      remarks: `Deleted document ${removed.documentNumber || removed.id} (${removed.formName})`,
+    });
+    return true;
+  }
+
+  public createDepartment(deptData: Partial<Department>): Department {
+    const newDept: Department = {
+      id: `dept-${Date.now()}`,
+      code: (deptData.code || 'DEPT').toUpperCase(),
+      name: deptData.name || 'New Department',
+    };
+    this.departments.push(newDept);
+    this.recordAudit('usr-admin', 'Super Administrator', 'Department Created', 'COMPANY', newDept.id, {
+      newValue: `${newDept.name} (${newDept.code})`,
+    });
+    return newDept;
+  }
+
+  public deleteDepartment(id: string): boolean {
+    const idx = this.departments.findIndex((d) => d.id === id);
+    if (idx === -1) return false;
+    const removed = this.departments.splice(idx, 1)[0];
+    this.recordAudit('usr-admin', 'Super Administrator', 'Department Deleted', 'COMPANY', id, {
+      remarks: `Deleted department ${removed.name} (${removed.code})`,
+    });
+    return true;
+  }
+
   public clearSampleData(): void {
     this.companies = [];
     this.documents = [];

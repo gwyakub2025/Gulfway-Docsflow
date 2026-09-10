@@ -13,6 +13,7 @@ import {
   PenTool,
   Upload,
   Download,
+  PlusCircle,
 } from 'lucide-react';
 import { FormTemplate, Company, DocumentRecord } from '../types/index.js';
 import { api } from '../api.js';
@@ -24,6 +25,7 @@ interface DocumentCreatorProps {
   onSelectForm: (form: FormTemplate) => void;
   onDocumentCreated: (doc: DocumentRecord, pdfBase64?: string) => void;
   onCancel: () => void;
+  onNavigateToFormBuilder?: () => void;
 }
 
 export const DocumentCreator: React.FC<DocumentCreatorProps> = ({
@@ -33,6 +35,7 @@ export const DocumentCreator: React.FC<DocumentCreatorProps> = ({
   onSelectForm,
   onDocumentCreated,
   onCancel,
+  onNavigateToFormBuilder,
 }) => {
   const [selectedCompanyId, setSelectedCompanyId] = useState(companies[0]?.id || '');
   const [formValues, setFormValues] = useState<Record<string, any>>({});
@@ -46,8 +49,40 @@ export const DocumentCreator: React.FC<DocumentCreatorProps> = ({
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const [creatorError, setCreatorError] = useState<string | null>(null);
 
-  // If no form selected yet, show form selector catalog
+  // If no form selected yet, show form selector catalog or empty state
   if (!selectedForm) {
+    if (forms.length === 0) {
+      return (
+        <div className="p-8 max-w-4xl mx-auto space-y-6 text-center">
+          <div className="bg-white border-2 border-dashed border-slate-200 rounded-2xl p-12 space-y-4 shadow-2xs">
+            <div className="w-14 h-14 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto">
+              <FileText className="w-7 h-7" />
+            </div>
+            <div className="space-y-1">
+              <h3 className="text-base font-bold text-slate-900">
+                No Form Templates Available in Catalog
+              </h3>
+              <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+                Before generating official numbered records, you need at least one published form template. Use the Form Builder to configure your document fields, or click below.
+              </p>
+            </div>
+            <div className="pt-2 flex flex-wrap items-center justify-center gap-3">
+              {onNavigateToFormBuilder && (
+                <button
+                  type="button"
+                  onClick={onNavigateToFormBuilder}
+                  className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-xl text-xs font-bold shadow-xs transition-colors inline-flex items-center gap-2 cursor-pointer"
+                >
+                  <PlusCircle className="w-4 h-4" />
+                  <span>Open Form Builder</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="p-8 max-w-7xl mx-auto space-y-6">
         <div>

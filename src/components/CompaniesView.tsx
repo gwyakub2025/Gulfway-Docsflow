@@ -15,28 +15,41 @@ import {
   RotateCcw,
   AlertTriangle,
   Info,
+  Edit2,
+  Layers,
+  FolderPlus,
 } from 'lucide-react';
-import { Company } from '../types/index.js';
+import { Company, Department } from '../types/index.js';
 import { api } from '../api.js';
 
 interface CompaniesViewProps {
   companies: Company[];
+  departments?: Department[];
   onCompanyCreated: (newComp: Company) => void;
+  onCompanyUpdated?: (updatedComp: Company) => void;
   onCompanyDeleted?: (deletedId: string) => void;
+  onDepartmentCreated?: (newDept: Department) => void;
+  onDepartmentDeleted?: (deletedId: string) => void;
   onResetAllData?: () => void;
 }
 
 export const CompaniesView: React.FC<CompaniesViewProps> = ({
   companies,
+  departments = [],
   onCompanyCreated,
+  onCompanyUpdated,
   onCompanyDeleted,
+  onDepartmentCreated,
+  onDepartmentDeleted,
   onResetAllData,
 }) => {
   const [showModal, setShowModal] = useState(false);
+  const [companyToEdit, setCompanyToEdit] = useState<Company | null>(null);
   const [showClearModal, setShowClearModal] = useState(false);
   const [companyToDelete, setCompanyToDelete] = useState<Company | null>(null);
   const [showExplainer, setShowExplainer] = useState(true);
 
+  // Company Form Fields
   const [name, setName] = useState('');
   const [code, setCode] = useState('');
   const [tradeLicense, setTradeLicense] = useState('');
@@ -51,10 +64,17 @@ export const CompaniesView: React.FC<CompaniesViewProps> = ({
   const [isClearing, setIsClearing] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  // Auto-generate a clean acronym code from company name if user hasn't manually customized code
+  // Department Modal States
+  const [showDeptModal, setShowDeptModal] = useState(false);
+  const [deptName, setDeptName] = useState('');
+  const [deptCode, setDeptCode] = useState('');
+  const [deptToDelete, setDeptToDelete] = useState<Department | null>(null);
+  const [isSubmittingDept, setIsSubmittingDept] = useState(false);
+
+  // Auto-generate acronym
   const handleNameChange = (val: string) => {
     setName(val);
-    if (!code || code.length <= 4) {
+    if (!companyToEdit && (!code || code.length <= 4)) {
       const words = val.trim().split(/\s+/).filter(Boolean);
       if (words.length >= 2) {
         const acronym = words
@@ -65,6 +85,36 @@ export const CompaniesView: React.FC<CompaniesViewProps> = ({
         if (acronym) setCode(acronym);
       }
     }
+  };
+
+  const handleOpenCreateCompany = () => {
+    setCompanyToEdit(null);
+    setName('');
+    setCode('');
+    setTradeLicense('');
+    setTrn('');
+    setAddress('');
+    setPhone('');
+    setEmail('');
+    setStampUrl('');
+    setShowAdvanced(false);
+    setStatusMessage(null);
+    setShowModal(true);
+  };
+
+  const handleOpenEditCompany = (comp: Company) => {
+    setCompanyToEdit(comp);
+    setName(comp.name);
+    setCode(comp.code);
+    setTradeLicense(comp.tradeLicenseNumber || '');
+    setTrn(comp.taxRegistrationNumber || '');
+    setAddress(comp.address || '');
+    setPhone(comp.phone || '');
+    setEmail(comp.email || '');
+    setStampUrl(comp.officialStampUrl || '');
+    setShowAdvanced(true);
+    setStatusMessage(null);
+    setShowModal(true);
   };
 
   const handleFillSample = () => {
@@ -78,7 +128,7 @@ export const CompaniesView: React.FC<CompaniesViewProps> = ({
     setStatusMessage(null);
   };
 
-  const handleCreateCompany = async (e: React.FormEvent) => {
+  const handleSaveCompany = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) {
       setStatusMessage({ type: 'error', text: 'Please enter a company legal name.' });
@@ -86,44 +136,65 @@ export const CompaniesView: React.FC<CompaniesViewProps> = ({
     }
 
     const finalCode = (code.trim() || name.slice(0, 3)).toUpperCase();
-
     setIsSubmitting(true);
     setStatusMessage(null);
 
     try {
-      const created = await api.createCompany({
-        name: name.trim(),
-        code: finalCode,
-        tradeLicenseNumber: tradeLicense.trim() || `CN-${Date.now().toString().slice(-6)}`,
-        taxRegistrationNumber: trn.trim() || undefined,
-        address: address.trim() || 'Dubai, United Arab Emirates',
-        phone: phone.trim() || '+971 4 000 0000',
-        email: email.trim() || `admin@${finalCode.toLowerCase()}.ae`,
-        officialStampUrl: stampUrl || undefined,
-        isActive: true,
-      });
+      if (companyToEdit) {
+        const updated = await api.updateCompany(companyToEdit.id, {
+          name: name.trim(),
+          code: finalCode,
+          tradeLicenseNumber: tradeLicense.trim() || undefined,
+          taxRegistrationNumber: trn.trim() || undefined,
+          address: address.trim() || undefined,
+          phone: phone.trim() || undefined,
+          email: email.trim() || undefined,
+          officialStampUrl: stampUrl || undefined,
+        });
 
-      setStatusMessage({ type: 'success', text: `Company "${created.name}" registered successfully!` });
-      onCompanyCreated(created);
+        setStatusMessage({ type: 'success', text: `Company "${updated.name}" updated successfully!` });
+        if (onCompanyUpdated) onCompanyUpdated(updated);
 
-      setTimeout(() => {
-        setShowModal(false);
-        setName('');
-        setCode('');
-        setTradeLicense('');
-        setTrn('');
-        setAddress('');
-        setPhone('');
-        setEmail('');
-        setStampUrl('');
-        setStatusMessage(null);
-        setIsSubmitting(false);
-      }, 700);
+        setTimeout(() => {
+          setShowModal(false);
+          setCompanyToEdit(null);
+          setIsSubmitting(false);
+        }, 600);
+      } else {
+        const created = await api.createCompany({
+          name: name.trim(),
+          code: finalCode,
+          tradeLicenseNumber: tradeLicense.trim() || `CN-${Date.now().toString().slice(-6)}`,
+          taxRegistrationNumber: trn.trim() || undefined,
+          address: address.trim() || 'Dubai, United Arab Emirates',
+          phone: phone.trim() || '+971 4 000 0000',
+          email: email.trim() || `admin@${finalCode.toLowerCase()}.ae`,
+          officialStampUrl: stampUrl || undefined,
+          isActive: true,
+        });
+
+        setStatusMessage({ type: 'success', text: `Company "${created.name}" registered successfully!` });
+        onCompanyCreated(created);
+
+        setTimeout(() => {
+          setShowModal(false);
+          setName('');
+          setCode('');
+          setTradeLicense('');
+          setTrn('');
+          setAddress('');
+          setPhone('');
+          setEmail('');
+          setStampUrl('');
+          setStatusMessage(null);
+          setIsSubmitting(false);
+        }, 600);
+      }
     } catch (err: any) {
-      console.error('Company registration caught error:', err);
+      console.error('Company save error:', err);
       setStatusMessage({
         type: 'error',
-        text: err.message || 'Unable to register company. Please try again.',
+        text: err.message || 'Unable to save company. Please try again.',
       });
       setIsSubmitting(false);
     }
@@ -140,6 +211,7 @@ export const CompaniesView: React.FC<CompaniesViewProps> = ({
       setCompanyToDelete(null);
     } catch (err: any) {
       console.error('Failed to delete company:', err);
+      alert(`Error deleting company: ${err.message}`);
     } finally {
       setIsDeleting(false);
     }
@@ -155,26 +227,61 @@ export const CompaniesView: React.FC<CompaniesViewProps> = ({
       }
     } catch (err: any) {
       console.error('Failed to clear sample data:', err);
+      alert(`Error clearing sample data: ${err.message}`);
     } finally {
       setIsClearing(false);
     }
   };
 
+  // Department Handlers
+  const handleCreateDepartment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!deptName.trim() || !deptCode.trim()) return;
+
+    setIsSubmittingDept(true);
+    try {
+      const created = await api.createDepartment({
+        name: deptName.trim(),
+        code: deptCode.trim().toUpperCase(),
+        companyId: companies[0]?.id || 'comp-default',
+      });
+      if (onDepartmentCreated) onDepartmentCreated(created);
+      setShowDeptModal(false);
+      setDeptName('');
+      setDeptCode('');
+    } catch (err: any) {
+      alert(`Error creating department: ${err.message}`);
+    } finally {
+      setIsSubmittingDept(false);
+    }
+  };
+
+  const handleDeleteDepartment = async () => {
+    if (!deptToDelete) return;
+    try {
+      await api.deleteDepartment(deptToDelete.id);
+      if (onDepartmentDeleted) onDepartmentDeleted(deptToDelete.id);
+      setDeptToDelete(null);
+    } catch (err: any) {
+      alert(`Error deleting department: ${err.message}`);
+    }
+  };
+
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-6">
+    <div className="p-8 max-w-7xl mx-auto space-y-8">
       {/* Why Sample Data Explainer Banner */}
       {showExplainer && (
-        <div className="bg-blue-50/70 border border-blue-200/80 rounded-xl p-4 flex items-start justify-between gap-3 text-xs text-blue-900">
+        <div className="bg-blue-50/70 border border-blue-200/80 rounded-xl p-4 flex items-start justify-between gap-3 text-xs text-blue-900 shadow-2xs">
           <div className="flex items-start gap-3">
             <div className="w-6 h-6 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center shrink-0 mt-0.5">
               <Info className="w-4 h-4" />
             </div>
             <div>
               <div className="font-bold text-slate-900 text-sm">
-                Why was sample data showing?
+                Need an empty database to add your own real company details?
               </div>
               <p className="text-slate-600 mt-1 leading-relaxed">
-                Initial sample companies (GWDS, GWT, GWL) were pre-loaded so you could immediately preview sequential numbering, PDF stamps, and signature workflows. If you want an <strong>empty database to add your own real company details</strong>, click <strong>"Clear Sample Data"</strong> on the right, or delete individual companies with the trash icon.
+                You can click <strong>"Clear Sample Data"</strong> in the top-right corner to purge all sample companies, forms, and documents, giving you a completely empty workspace. You can also edit or delete any company and department directly from their cards.
               </p>
             </div>
           </div>
@@ -189,7 +296,7 @@ export const CompaniesView: React.FC<CompaniesViewProps> = ({
         </div>
       )}
 
-      {/* Header */}
+      {/* Companies Section Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-200">
         <div>
           <div className="flex items-center gap-2">
@@ -223,22 +330,20 @@ export const CompaniesView: React.FC<CompaniesViewProps> = ({
           )}
 
           <button
-            id="btn-open-add-company"
-            onClick={() => {
-              setShowModal(true);
-              setStatusMessage(null);
-            }}
+            id="btn-register-company"
+            type="button"
+            onClick={handleOpenCreateCompany}
             className="px-4 py-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-lg text-xs font-bold shadow-xs transition-colors flex items-center gap-2 cursor-pointer"
           >
             <Plus className="w-4 h-4" />
-            <span>Add Operating Company</span>
+            <span>Register New Company</span>
           </button>
         </div>
       </div>
 
-      {/* Empty State when no companies exist */}
+      {/* Companies Empty State or Cards Grid */}
       {companies.length === 0 ? (
-        <div className="bg-white border-2 border-dashed border-slate-200 rounded-2xl p-12 text-center max-w-xl mx-auto my-8 space-y-4 shadow-2xs">
+        <div className="bg-white border-2 border-dashed border-slate-200 rounded-2xl p-12 text-center max-w-xl mx-auto space-y-4 shadow-2xs">
           <div className="w-14 h-14 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto">
             <Building2 className="w-7 h-7" />
           </div>
@@ -247,16 +352,13 @@ export const CompaniesView: React.FC<CompaniesViewProps> = ({
               No Operating Companies Registered
             </h3>
             <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
-              Your database is clean and empty. Begin by adding your operating company details (Legal Name, Acronym Code, UAE Trade License, and TRN).
+              Your database is clean and empty. Register your first operating legal company below with its trade license and prefix code to get started.
             </p>
           </div>
           <div className="pt-2">
             <button
               type="button"
-              onClick={() => {
-                setShowModal(true);
-                setStatusMessage(null);
-              }}
+              onClick={handleOpenCreateCompany}
               className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-xl text-xs font-bold shadow-xs transition-colors inline-flex items-center gap-2 cursor-pointer"
             >
               <Plus className="w-4 h-4" />
@@ -265,7 +367,6 @@ export const CompaniesView: React.FC<CompaniesViewProps> = ({
           </div>
         </div>
       ) : (
-        /* Grid of Companies */
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {companies.map((comp) => (
             <div
@@ -284,11 +385,19 @@ export const CompaniesView: React.FC<CompaniesViewProps> = ({
                     </span>
                     <button
                       type="button"
+                      title={`Edit ${comp.name}`}
+                      onClick={() => handleOpenEditCompany(comp)}
+                      className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors cursor-pointer"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
                       title={`Delete ${comp.name}`}
                       onClick={() => setCompanyToDelete(comp)}
                       className="p-1 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors cursor-pointer"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 </div>
@@ -332,10 +441,78 @@ export const CompaniesView: React.FC<CompaniesViewProps> = ({
         </div>
       )}
 
-      {/* Delete Confirmation Modal */}
+      {/* Corporate Departments Directory Section */}
+      <div className="pt-6 border-t border-slate-200 space-y-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold px-2 py-0.5 rounded-sm bg-indigo-100 text-indigo-800">
+                ORGANIZATIONAL STRUCTURE
+              </span>
+              <span className="text-xs font-medium text-slate-500">
+                {departments.length} Active {departments.length === 1 ? 'Department' : 'Departments'}
+              </span>
+            </div>
+            <h3 className="text-lg font-bold text-slate-900 mt-1">
+              Corporate Departments & Business Units
+            </h3>
+            <p className="text-xs text-slate-500">
+              Departments are used across document sequential numbering formulas (e.g. &#123;DEPARTMENT&#125;) and approval routing chains.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              setDeptName('');
+              setDeptCode('');
+              setShowDeptModal(true);
+            }}
+            className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-lg text-xs font-bold shadow-xs transition-colors flex items-center gap-2 cursor-pointer self-start md:self-auto"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add Department</span>
+          </button>
+        </div>
+
+        {departments.length === 0 ? (
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-6 text-center text-xs text-slate-500">
+            No corporate departments configured yet. Add your departments (e.g., HR, OPS, FIN, IT, LOG) to route documents and generate tokenized serial numbers.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            {departments.map((dept) => (
+              <div
+                key={dept.id}
+                className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs hover:border-indigo-300 transition-all flex items-center justify-between"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-700 font-mono font-bold text-xs flex items-center justify-center">
+                    {dept.code}
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-slate-900 text-xs">{dept.name}</h4>
+                    <span className="text-[10px] text-slate-400 font-mono">Token: {`{${dept.code}}`}</span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  title={`Delete ${dept.name}`}
+                  onClick={() => setDeptToDelete(dept)}
+                  className="p-1 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Delete Company Modal */}
       {companyToDelete && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
             <div className="flex items-start gap-3.5">
               <div className="w-10 h-10 rounded-xl bg-red-50 text-red-600 flex items-center justify-center shrink-0">
                 <AlertTriangle className="w-5 h-5" />
@@ -372,6 +549,41 @@ export const CompaniesView: React.FC<CompaniesViewProps> = ({
         </div>
       )}
 
+      {/* Delete Department Modal */}
+      {deptToDelete && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-start gap-3.5 text-red-600">
+              <div className="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Delete Department</h3>
+                <p className="text-xs text-slate-500">Are you sure you want to remove <strong className="text-slate-900">"{deptToDelete.name}"</strong> ({deptToDelete.code})?</p>
+              </div>
+            </div>
+
+            <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setDeptToDelete(null)}
+                className="px-4 py-2 font-semibold text-slate-600 hover:text-slate-900 text-xs rounded-lg transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteDepartment}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white rounded-lg text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Delete Department</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Clear All Sample Data Modal */}
       {showClearModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
@@ -385,7 +597,7 @@ export const CompaniesView: React.FC<CompaniesViewProps> = ({
                   Clear All Sample Data?
                 </h3>
                 <p className="text-xs text-slate-600 leading-relaxed">
-                  This will remove the 3 demo companies and sample documents from your database. You will get a <strong>completely empty, clean slate</strong> ready to register your actual UAE companies, trade licenses, and details.
+                  This will remove the demo companies, sample templates, and documents from your database. You will get a <strong>completely empty, clean slate</strong> ready to register your actual UAE companies, trade licenses, and details.
                 </p>
               </div>
             </div>
@@ -412,7 +624,86 @@ export const CompaniesView: React.FC<CompaniesViewProps> = ({
         </div>
       )}
 
-      {/* Simple, Streamlined Company Registration Modal */}
+      {/* Add Department Modal */}
+      {showDeptModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                  <Layers className="w-4 h-4" />
+                </div>
+                <h3 className="font-bold text-slate-900 text-sm">Add New Department</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowDeptModal(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateDepartment} className="space-y-4 text-xs">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Department Name <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={deptName}
+                  onChange={(e) => {
+                    setDeptName(e.target.value);
+                    if (!deptCode) {
+                      setDeptCode(e.target.value.slice(0, 3).toUpperCase());
+                    }
+                  }}
+                  placeholder="e.g. Human Resources, Fleet Operations"
+                  required
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-800 font-medium"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Department Code / Token <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={deptCode}
+                  onChange={(e) => setDeptCode(e.target.value.toUpperCase())}
+                  placeholder="e.g. HR, OPS, FIN"
+                  maxLength={6}
+                  required
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono font-bold text-indigo-900"
+                />
+                <span className="text-[10px] text-slate-400 mt-1 block">
+                  This code replaces &#123;DEPARTMENT&#125; in serial number formulas.
+                </span>
+              </div>
+
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setShowDeptModal(false)}
+                  className="px-4 py-2 font-semibold text-slate-600 hover:text-slate-900 rounded-lg cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingDept}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg shadow-xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  {isSubmittingDept ? 'Saving...' : 'Create Department'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Company Registration / Edit Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4 animate-in fade-in zoom-in-95 duration-150">
@@ -424,10 +715,12 @@ export const CompaniesView: React.FC<CompaniesViewProps> = ({
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-slate-900">
-                    Register Operating Company
+                    {companyToEdit ? 'Edit Operating Company' : 'Register Operating Company'}
                   </h3>
                   <p className="text-[11px] text-slate-500">
-                    Add your company details to the document numbering registry.
+                    {companyToEdit
+                      ? `Update entity specifications for ${companyToEdit.name}`
+                      : 'Add your company details to the document numbering registry.'}
                   </p>
                 </div>
               </div>
@@ -450,121 +743,107 @@ export const CompaniesView: React.FC<CompaniesViewProps> = ({
                 }`}
               >
                 {statusMessage.type === 'success' ? (
-                  <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <CheckCircle className="w-4 h-4 shrink-0 text-emerald-600" />
                 ) : (
-                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
                 )}
-                <span className="font-medium">{statusMessage.text}</span>
+                <span>{statusMessage.text}</span>
               </div>
             )}
 
-            {/* Quick Fill Helper */}
-            <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-xs">
-              <span className="text-slate-600 flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-blue-600" />
-                <span>Want to test quickly with sample data?</span>
-              </span>
-              <button
-                type="button"
-                onClick={handleFillSample}
-                className="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 font-bold rounded-lg text-[11px] transition-colors cursor-pointer"
-              >
-                Fill Sample Data
-              </button>
-            </div>
-
             {/* Form */}
-            <form onSubmit={handleCreateCompany} className="space-y-3.5 text-xs">
-              <div className="grid grid-cols-3 gap-3">
-                <div className="col-span-2">
-                  <label className="block font-bold text-slate-700 mb-1">
-                    Company Legal Name <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    id="input-company-name"
-                    type="text"
-                    value={name}
-                    onChange={(e) => handleNameChange(e.target.value)}
-                    placeholder="e.g. Gulf Way Express LLC"
-                    required
-                    autoFocus
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                  />
-                </div>
+            <form onSubmit={handleSaveCompany} className="space-y-4 text-xs">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Company Legal Name <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  id="input-company-name"
+                  type="text"
+                  value={name}
+                  onChange={(e) => handleNameChange(e.target.value)}
+                  placeholder="e.g. Gulf Way Transport & Logistics LLC"
+                  required
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-800 font-medium focus:outline-hidden focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">
-                    Entity Code <span className="text-rose-500">*</span>
+                    Company Code / Prefix <span className="text-rose-500">*</span>
                   </label>
                   <input
                     id="input-company-code"
                     type="text"
                     value={code}
                     onChange={(e) => setCode(e.target.value.toUpperCase())}
-                    placeholder="GWE"
+                    placeholder="e.g. GWTL"
                     maxLength={6}
                     required
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 uppercase"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono font-bold text-blue-900 focus:outline-hidden focus:border-blue-500 uppercase"
                   />
+                  <span className="text-[10px] text-slate-400 mt-1 block">
+                    Used in tokenized numbering ({'{COMPANY}'})
+                  </span>
                 </div>
-              </div>
 
-              {/* Core Details */}
-              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-medium text-slate-700 mb-1">
+                  <label className="block font-bold text-slate-700 mb-1">
                     Trade License Number
                   </label>
                   <input
-                    id="input-trade-license"
                     type="text"
                     value={tradeLicense}
                     onChange={(e) => setTradeLicense(e.target.value)}
-                    placeholder="CN-2026-XXXX"
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono text-slate-800"
-                  />
-                </div>
-                <div>
-                  <label className="block font-medium text-slate-700 mb-1">
-                    TRN (Tax Registration)
-                  </label>
-                  <input
-                    id="input-trn"
-                    type="text"
-                    value={trn}
-                    onChange={(e) => setTrn(e.target.value)}
-                    placeholder="100XXXXXXXXX"
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono text-slate-800"
+                    placeholder="e.g. CN-1049281"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono text-slate-800 focus:outline-hidden focus:border-blue-500"
                   />
                 </div>
               </div>
 
-              {/* Toggle Optional Fields */}
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Tax Registration Number (TRN)
+                </label>
+                <input
+                  type="text"
+                  value={trn}
+                  onChange={(e) => setTrn(e.target.value)}
+                  placeholder="15-digit UAE VAT TRN"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono text-slate-800 focus:outline-hidden focus:border-blue-500"
+                />
+              </div>
+
+              {/* Advanced / Optional Fields Toggle */}
               <div>
                 <button
                   type="button"
                   onClick={() => setShowAdvanced(!showAdvanced)}
-                  className="text-[11px] font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 cursor-pointer pt-1"
+                  className="text-xs text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1 cursor-pointer"
                 >
-                  <span>{showAdvanced ? '− Hide address & contact fields' : '+ Add optional address & contact details'}</span>
+                  <span>{showAdvanced ? 'Hide Optional Contact Details' : '+ Add Address, Phone, Email & Stamp'}</span>
                 </button>
               </div>
 
               {showAdvanced && (
                 <div className="space-y-3 pt-2 border-t border-slate-100 animate-in fade-in duration-150">
                   <div>
-                    <label className="block font-medium text-slate-700 mb-1">Registered Address</label>
+                    <label className="block font-bold text-slate-700 mb-1">
+                      Registered Physical Address
+                    </label>
                     <input
                       type="text"
                       value={address}
                       onChange={(e) => setAddress(e.target.value)}
-                      placeholder="Al Quoz Industrial Area, Dubai, UAE"
+                      placeholder="e.g. Office 402, Business Bay, Dubai, UAE"
                       className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-800"
                     />
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block font-medium text-slate-700 mb-1">Contact Phone</label>
+                      <label className="block font-bold text-slate-700 mb-1">Phone Number</label>
                       <input
                         type="text"
                         value={phone}
@@ -574,7 +853,7 @@ export const CompaniesView: React.FC<CompaniesViewProps> = ({
                       />
                     </div>
                     <div>
-                      <label className="block font-medium text-slate-700 mb-1">Official Email</label>
+                      <label className="block font-bold text-slate-700 mb-1">Official Email</label>
                       <input
                         type="email"
                         value={email}
@@ -606,10 +885,10 @@ export const CompaniesView: React.FC<CompaniesViewProps> = ({
                   {isSubmitting ? (
                     <>
                       <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
-                      <span>Registering...</span>
+                      <span>Saving...</span>
                     </>
                   ) : (
-                    <span>Register Company</span>
+                    <span>{companyToEdit ? 'Save Changes' : 'Register Company'}</span>
                   )}
                 </button>
               </div>

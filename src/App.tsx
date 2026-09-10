@@ -14,6 +14,14 @@ import { NumberingRulesView } from './components/NumberingRulesView.js';
 import { UsersRolesView } from './components/UsersRolesView.js';
 import { AuditLogsView } from './components/AuditLogsView.js';
 import { ArchitectureView } from './components/ArchitectureView.js';
+import { AnalyticsView } from './components/AnalyticsView.js';
+import {
+  FileText,
+  Trash2,
+  Plus,
+  AlertTriangle,
+  FolderOpen,
+} from 'lucide-react';
 import {
   Company,
   Department,
@@ -47,6 +55,10 @@ export function App() {
   const [users, setUsers] = useState<User[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [dashboardStats, setDashboardStats] = useState<any>(null);
+
+  // Form deletion state
+  const [formToDelete, setFormToDelete] = useState<FormTemplate | null>(null);
+  const [isDeletingForm, setIsDeletingForm] = useState(false);
 
   // Workflow Active Objects
   const [activeFormForFill, setActiveFormForFill] = useState<FormTemplate | null>(null);
@@ -263,63 +275,103 @@ export function App() {
                         setActiveFormForEdit(null);
                         setCurrentTab('form-builder');
                       }}
-                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors"
+                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
                     >
-                      + Create New Form
+                      <Plus className="w-4 h-4" />
+                      <span>Create New Form</span>
                     </button>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                    {forms.map((form) => (
-                      <div
-                        key={form.id}
-                        className="bg-white border border-slate-200 rounded-xl p-5 shadow-2xs hover:border-blue-400 transition-all flex flex-col justify-between"
-                      >
-                        <div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-mono font-bold px-2 py-0.5 rounded-md bg-blue-50 text-blue-800 border border-blue-200">
-                              {form.formCode}
-                            </span>
-                            <span className="text-[11px] font-semibold text-slate-500">
-                              Version {form.currentVersion}
-                            </span>
-                          </div>
-                          <h3 className="font-bold text-slate-900 text-base mt-2.5">
-                            {form.formName}
-                          </h3>
-                          <p className="text-xs text-slate-500 mt-1 line-clamp-2">
-                            {form.description}
-                          </p>
-
-                          <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
-                            <span className="text-slate-400">{form.fields.length} Mapped Fields</span>
-                            <span className="text-blue-600 font-semibold">{form.category}</span>
-                          </div>
-                        </div>
-
-                        <div className="mt-5 pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
-                          <button
-                            onClick={() => {
-                              setActiveFormForEdit(form);
-                              setCurrentTab('form-builder');
-                            }}
-                            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold"
-                          >
-                            Edit Fields
-                          </button>
-                          <button
-                            onClick={() => {
-                              setActiveFormForFill(form);
-                              setCurrentTab('create-document');
-                            }}
-                            className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-xs"
-                          >
-                            Fill Form →
-                          </button>
-                        </div>
+                  {forms.length === 0 ? (
+                    <div className="bg-white border-2 border-dashed border-slate-200 rounded-2xl p-12 text-center max-w-xl mx-auto space-y-4 shadow-2xs">
+                      <div className="w-14 h-14 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto">
+                        <FileText className="w-7 h-7" />
                       </div>
-                    ))}
-                  </div>
+                      <div className="space-y-1">
+                        <h3 className="text-base font-bold text-slate-900">
+                          No Form Templates Configured
+                        </h3>
+                        <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+                          Your catalog is empty. Build custom forms with dynamic fields, approvals, and numbering links using our Form Builder.
+                        </p>
+                      </div>
+                      <div className="pt-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveFormForEdit(null);
+                            setCurrentTab('form-builder');
+                          }}
+                          className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-xl text-xs font-bold shadow-xs transition-colors inline-flex items-center gap-2 cursor-pointer"
+                        >
+                          <Plus className="w-4 h-4" />
+                          <span>Build Your First Form</span>
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                      {forms.map((form) => (
+                        <div
+                          key={form.id}
+                          className="bg-white border border-slate-200 rounded-xl p-5 shadow-2xs hover:border-blue-400 transition-all flex flex-col justify-between group"
+                        >
+                          <div>
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-mono font-bold px-2 py-0.5 rounded-md bg-blue-50 text-blue-800 border border-blue-200">
+                                {form.formCode}
+                              </span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-[11px] font-semibold text-slate-500">
+                                  v{form.currentVersion}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setFormToDelete(form)}
+                                  className="p-1 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors cursor-pointer"
+                                  title="Delete Form Template"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                            <h3 className="font-bold text-slate-900 text-base mt-2.5">
+                              {form.formName}
+                            </h3>
+                            <p className="text-xs text-slate-500 mt-1 line-clamp-2">
+                              {form.description}
+                            </p>
+
+                            <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
+                              <span className="text-slate-400">{form.fields.length} Mapped Fields</span>
+                              <span className="text-blue-600 font-semibold">{form.category}</span>
+                            </div>
+                          </div>
+
+                          <div className="mt-5 pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+                            <button
+                              onClick={() => {
+                                setActiveFormForEdit(form);
+                                setCurrentTab('form-builder');
+                              }}
+                              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold cursor-pointer"
+                            >
+                              Edit Fields
+                            </button>
+                            <button
+                              onClick={() => {
+                                setActiveFormForFill(form);
+                                setCurrentTab('create-document');
+                              }}
+                              className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-xs cursor-pointer"
+                            >
+                              Fill Form →
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -335,6 +387,7 @@ export function App() {
                     setActiveDocumentDetails(newDoc);
                   }}
                   onCancel={() => setActiveFormForFill(null)}
+                  onNavigateToFormBuilder={() => setCurrentTab('form-builder')}
                 />
               )}
 
@@ -421,6 +474,14 @@ export function App() {
                   onRuleCreated={async (newRule) => {
                     setNumberingRules([...numberingRules, newRule]);
                   }}
+                  onRuleUpdated={(updatedRule) => {
+                    setNumberingRules(
+                      numberingRules.map((r) => (r.id === updatedRule.id ? updatedRule : r))
+                    );
+                  }}
+                  onRuleDeleted={(deletedId) => {
+                    setNumberingRules(numberingRules.filter((r) => r.id !== deletedId));
+                  }}
                 />
               )}
 
@@ -428,15 +489,27 @@ export function App() {
               {currentTab === 'companies' && (
                 <CompaniesView
                   companies={companies}
+                  departments={departments}
                   onCompanyCreated={async (newComp) => {
                     setCompanies([...companies, newComp]);
                     await refreshDocumentsAndStats();
+                  }}
+                  onCompanyUpdated={(updatedComp) => {
+                    setCompanies(
+                      companies.map((c) => (c.id === updatedComp.id ? updatedComp : c))
+                    );
                   }}
                   onCompanyDeleted={(deletedId) => {
                     setCompanies(companies.filter((c) => c.id !== deletedId));
                     if (selectedCompanyId === deletedId) {
                       setSelectedCompanyId('ALL');
                     }
+                  }}
+                  onDepartmentCreated={(newDept) => {
+                    setDepartments([...departments, newDept]);
+                  }}
+                  onDepartmentDeleted={(deletedId) => {
+                    setDepartments(departments.filter((d) => d.id !== deletedId));
                   }}
                   onResetAllData={async () => {
                     await loadInitialData();
@@ -514,12 +587,76 @@ export function App() {
               {/* AUDIT LOGS TAB */}
               {currentTab === 'audit-logs' && <AuditLogsView logs={auditLogs} />}
 
+              {/* ANALYTICS TAB */}
+              {currentTab === 'analytics' && (
+                <AnalyticsView
+                  documents={documents}
+                  companies={companies}
+                  forms={forms}
+                  auditLogs={auditLogs}
+                  onViewDocument={(doc) => setActiveDocumentDetails(doc)}
+                  onNavigateToTab={(tab) => setCurrentTab(tab)}
+                />
+              )}
+
               {/* SETTINGS / ARCHITECTURE TAB */}
-              {currentTab === 'settings' && <ArchitectureView />}
+              {currentTab === 'settings' && (
+                <ArchitectureView onNavigate={(tab) => setCurrentTab(tab)} />
+              )}
             </>
           )}
         </main>
       </div>
+
+      {/* DELETE FORM CONFIRMATION MODAL */}
+      {formToDelete && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-start gap-3.5 text-red-600">
+              <div className="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-base font-bold text-slate-900">Delete Form Template?</h3>
+                <p className="text-xs text-slate-500">
+                  Are you sure you want to delete <strong className="text-slate-900 font-mono">"{formToDelete.formName}"</strong> ({formToDelete.formCode})? Existing finalized documents created with this form will be preserved in audit records.
+                </p>
+              </div>
+            </div>
+
+            <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                disabled={isDeletingForm}
+                onClick={() => setFormToDelete(null)}
+                className="px-4 py-2 font-semibold text-slate-600 hover:text-slate-900 text-xs rounded-lg transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isDeletingForm}
+                onClick={async () => {
+                  setIsDeletingForm(true);
+                  try {
+                    await api.deleteForm(formToDelete.id);
+                    setForms(forms.filter((f) => f.id !== formToDelete.id));
+                    setFormToDelete(null);
+                  } catch (err: any) {
+                    alert(`Error deleting form: ${err.message}`);
+                  } finally {
+                    setIsDeletingForm(false);
+                  }
+                }}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 active:bg-red-800 disabled:opacity-50 text-white rounded-lg text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>{isDeletingForm ? 'Deleting...' : 'Delete Form'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* PHYSICAL SIGNATURE MODAL */}
       {physicalSignModalDoc && (

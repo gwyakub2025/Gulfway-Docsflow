@@ -122,6 +122,28 @@ export const api = {
     return safeFetch('/api/departments', undefined, () => clientStore.getDepartments());
   },
 
+  async createDepartment(data: Partial<Department>): Promise<Department> {
+    return safeFetch(
+      '/api/departments',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      },
+      () => clientStore.createDepartment(data)
+    );
+  },
+
+  async deleteDepartment(id: string): Promise<{ success: boolean; id: string }> {
+    return safeFetch(
+      `/api/departments/${id}`,
+      {
+        method: 'DELETE',
+      },
+      () => clientStore.deleteDepartment(id)
+    );
+  },
+
   // Users & Roles
   async getUsers(): Promise<User[]> {
     return safeFetch('/api/users', undefined, () => clientStore.getUsers());
@@ -216,6 +238,28 @@ export const api = {
     );
   },
 
+  async updateNumberingRule(id: string, data: Partial<NumberingRule>): Promise<NumberingRule> {
+    return safeFetch(
+      `/api/numbering-rules/${id}`,
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      },
+      () => clientStore.updateNumberingRule(id, data)
+    );
+  },
+
+  async deleteNumberingRule(id: string): Promise<{ success: boolean; id: string }> {
+    return safeFetch(
+      `/api/numbering-rules/${id}`,
+      {
+        method: 'DELETE',
+      },
+      () => clientStore.deleteNumberingRule(id)
+    );
+  },
+
   async previewNumberPattern(payload: {
     pattern: string;
     companyCode?: string;
@@ -276,6 +320,14 @@ export const api = {
       `/api/forms/${id}/publish`,
       { method: 'POST' },
       () => clientStore.publishForm(id)
+    );
+  },
+
+  async deleteForm(id: string): Promise<{ success: boolean; id: string }> {
+    return safeFetch(
+      `/api/forms/${id}`,
+      { method: 'DELETE' },
+      () => clientStore.deleteForm(id)
     );
   },
 
@@ -435,6 +487,14 @@ export const api = {
         body: JSON.stringify({ remarks }),
       },
       () => clientStore.voidDocument(id, remarks)
+    );
+  },
+
+  async deleteDocument(id: string): Promise<{ success: boolean; id: string }> {
+    return safeFetch(
+      `/api/documents/${id}`,
+      { method: 'DELETE' },
+      () => clientStore.deleteDocument(id)
     );
   },
 

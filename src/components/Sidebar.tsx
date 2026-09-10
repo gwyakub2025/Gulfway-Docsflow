@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   LayoutDashboard,
+  BarChart3,
   FileText,
   PlusCircle,
   FolderKanban,
@@ -36,6 +37,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const mainNavItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'analytics', label: 'Analytics & Insights', icon: BarChart3 },
     { id: 'form-library', label: 'Forms Catalog', icon: FileSpreadsheet },
     { id: 'create-document', label: 'Create Document', icon: PlusCircle },
     { id: 'document-register', label: 'Document Register', icon: FolderKanban },

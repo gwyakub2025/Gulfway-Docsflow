@@ -162,6 +162,8 @@ export interface FormTemplate {
   instructions: string;
   pdfTemplateUrl: string;
   pdfPageCount: number;
+  docxHtmlContent?: string;
+  sourceDocumentName?: string;
   fields: FormField[];
   numberingRuleId: string;
   approvalWorkflowId?: string;

@@ -361,7 +361,12 @@ export const api = {
   },
 
   getDocumentPdfUrl(id: string, download = false): string {
-    return `/api/documents/${id}/pdf${download ? '?download=true' : ''}`;
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    const params = new URLSearchParams();
+    if (download) params.set('download', 'true');
+    if (origin) params.set('baseUrl', origin);
+    const queryString = params.toString();
+    return `/api/documents/${id}/pdf${queryString ? `?${queryString}` : ''}`;
   },
 
   async getDocumentQrCode(id: string): Promise<{
@@ -371,18 +376,21 @@ export const api = {
     verificationUrl: string;
     qrDataUrl: string;
   }> {
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    const url = origin
+      ? `/api/documents/${id}/qr-code?baseUrl=${encodeURIComponent(origin)}`
+      : `/api/documents/${id}/qr-code`;
     return safeFetch(
-      `/api/documents/${id}/qr-code`,
+      url,
       undefined,
       () => {
         const doc = clientStore.getDocument(id);
         const tok = doc.secureVerificationToken || 'TOKEN_PENDING';
-        const num = doc.documentNumber || 'PENDING';
         return {
           documentId: doc.id,
           documentNumber: doc.documentNumber || null,
           verificationToken: tok,
-          verificationUrl: `${window.location.origin}/verify/${tok}`,
+          verificationUrl: `${origin || 'http://localhost:3000'}/verify/${tok}`,
           qrDataUrl: '',
         };
       }
@@ -398,6 +406,25 @@ export const api = {
         body: JSON.stringify(data),
       },
       () => clientStore.saveDraft(data)
+    );
+  },
+
+  async updateDocument(
+    id: string,
+    data: { values?: Record<string, any>; employeeName?: string; employeeId?: string }
+  ): Promise<{
+    success: boolean;
+    document: DocumentRecord;
+    pdfBase64?: string;
+  }> {
+    return safeFetch(
+      `/api/documents/${id}`,
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      },
+      () => clientStore.updateDocument(id, data)
     );
   },
 

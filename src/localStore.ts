@@ -249,6 +249,20 @@ const DEFAULT_RULES: NumberingRule[] = [
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
   },
+  {
+    id: 'rule-salary-cert',
+    name: 'Staff Salary & Certificate Register',
+    formTemplateId: 'form-salary-certificate',
+    prefix: '',
+    pattern: '{COMPANY}-HR-SSC-{YYYY}-{SEQ:6}',
+    paddingZeros: 6,
+    currentSequence: 1025,
+    sequenceReset: 'YEARLY',
+    isActive: true,
+    description: 'Sequential register for Staff Salary & Employment Certificates',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+  },
 ];
 
 const makeField = (f: Partial<FormField> & { id: string; name: string; label: string; type: any }): FormField => ({
@@ -353,6 +367,41 @@ const DEFAULT_TEMPLATES: FormTemplate[] = [
       makeField({ id: 'fld-amount', name: 'requested_amount', label: 'Advance Amount (AED)', type: 'number', pageNumber: 1, x: 52, y: 28, width: 40, height: 3.5, required: true }),
       makeField({ id: 'fld-installments', name: 'deduction_installments', label: 'Deduction Installments (Months)', type: 'dropdown', pageNumber: 1, x: 8, y: 34, width: 40, height: 3.5, options: ['1 Month', '2 Months', '3 Months'], required: true }),
       makeField({ id: 'fld-saf-reason', name: 'reason', label: 'Reason for Emergency Advance', type: 'textarea', pageNumber: 1, x: 8, y: 40, width: 84, height: 6, required: true }),
+    ],
+    createdAt: '2026-02-01T00:00:00.000Z',
+    updatedAt: '2026-02-01T00:00:00.000Z',
+    createdBy: 'usr-admin',
+  },
+  {
+    id: 'form-salary-certificate',
+    formName: 'Staff Salary & Employment Certificate',
+    formCode: 'SSC',
+    description: 'Official corporate salary certificate for bank accounts, loans, visa applications, and embassy submissions',
+    companyScope: 'ALL',
+    companyIds: [],
+    departmentId: 'dept-hr',
+    category: 'HR Forms',
+    currentVersion: 1,
+    effectiveDate: '2026-01-01',
+    status: 'ACTIVE',
+    instructions: 'Fill in employee salary and recipient information accurately. Digital signature by HR and company seal are verified via QR code.',
+    pdfTemplateUrl: '',
+    pdfPageCount: 1,
+    numberingRuleId: 'rule-salary-cert',
+    versions: [],
+    fields: [
+      makeField({ id: 'fld-ssc-emp-name', name: 'employee_name', label: 'Staff Full Name', type: 'text', pageNumber: 1, x: 8, y: 28, width: 40, height: 3.5, required: true, placeholder: 'e.g. Tariq Mansoor' }),
+      makeField({ id: 'fld-ssc-emp-id', name: 'employee_id', label: 'Staff / Badge ID', type: 'text', pageNumber: 1, x: 52, y: 28, width: 40, height: 3.5, required: true, placeholder: 'GW-088' }),
+      makeField({ id: 'fld-ssc-desig', name: 'designation', label: 'Designation / Job Title', type: 'text', pageNumber: 1, x: 8, y: 35, width: 40, height: 3.5, required: true, placeholder: 'Fleet & Dispatch Supervisor' }),
+      makeField({ id: 'fld-ssc-join', name: 'joining_date', label: 'Date of Joining', type: 'date', pageNumber: 1, x: 52, y: 35, width: 40, height: 3.5, required: true }),
+      makeField({ id: 'fld-ssc-basic', name: 'basic_salary', label: 'Basic Salary (AED)', type: 'number', pageNumber: 1, x: 8, y: 42, width: 40, height: 3.5, required: true, placeholder: '5500' }),
+      makeField({ id: 'fld-ssc-allow', name: 'allowances', label: 'Allowances (Housing & Transport) (AED)', type: 'number', pageNumber: 1, x: 52, y: 42, width: 40, height: 3.5, required: true, placeholder: '2500' }),
+      makeField({ id: 'fld-ssc-gross', name: 'gross_monthly_salary', label: 'Total Gross Monthly Salary (AED)', type: 'number', pageNumber: 1, x: 8, y: 49, width: 40, height: 3.5, required: true, placeholder: '8000' }),
+      makeField({ id: 'fld-ssc-purpose', name: 'certificate_purpose', label: 'Purpose of Certificate', type: 'dropdown', pageNumber: 1, x: 52, y: 49, width: 40, height: 3.5, required: true, options: ['Bank Account Opening / Salary Transfer', 'Personal Loan / Auto Finance Application', 'Embassy Visa Application', 'Family Residence Visa Sponsorship', 'General Verification'] }),
+      makeField({ id: 'fld-ssc-recipient', name: 'addressed_to', label: 'Addressed To / Recipient', type: 'text', pageNumber: 1, x: 8, y: 56, width: 84, height: 3.5, required: true, placeholder: 'To Whom It May Concern (or Bank Name)' }),
+      makeField({ id: 'fld-ssc-qr', name: 'qr_verification', label: 'Tamper-evident QR Code', type: 'qr_code', pageNumber: 1, x: 8, y: 83, width: 13, height: 10, required: true, editable: false }),
+      makeField({ id: 'fld-ssc-hr-sig', name: 'hr_signature', label: 'Authorized HR Signatory', type: 'signature', pageNumber: 1, x: 35, y: 84, width: 34, height: 8, required: true, editable: false, signerRole: 'APPROVER' }),
+      makeField({ id: 'fld-ssc-stamp', name: 'company_stamp', label: 'Corporate Seal & Stamp', type: 'company_stamp', pageNumber: 1, x: 74, y: 84, width: 18, height: 9, required: true, editable: false }),
     ],
     createdAt: '2026-02-01T00:00:00.000Z',
     updatedAt: '2026-02-01T00:00:00.000Z',
@@ -905,8 +954,10 @@ class ClientLocalStorageStore {
       effectiveDate: new Date().toISOString().split('T')[0],
       status: 'ACTIVE',
       instructions: data.instructions || '',
-      pdfTemplateUrl: '',
-      pdfPageCount: 1,
+      pdfTemplateUrl: data.pdfTemplateUrl || '',
+      pdfPageCount: data.pdfPageCount || 1,
+      docxHtmlContent: data.docxHtmlContent,
+      sourceDocumentName: data.sourceDocumentName,
       numberingRuleId: data.numberingRuleId || 'rule-hr-leave',
       versions: [],
       fields: data.fields || [],
@@ -1021,6 +1072,36 @@ class ClientLocalStorageStore {
     this.recordAudit(user.id, user.fullName, 'Document Draft Created', 'DOCUMENT', draftDoc.id, draftDoc.formName);
     this.saveToStorage();
     return draftDoc;
+  }
+
+  public updateDocument(id: string, data: { values?: Record<string, any>; employeeName?: string; employeeId?: string }) {
+    const user = this.getCurrentUser();
+    const doc = this.getDocument(id);
+
+    if (doc.status === 'FINAL' || doc.status === 'VOID') {
+      throw new Error('Cannot modify a finalized or voided document');
+    }
+
+    if (data.values && typeof data.values === 'object') {
+      doc.values = { ...doc.values, ...data.values };
+    }
+    if (data.employeeName) doc.employeeName = data.employeeName;
+    if (data.employeeId) doc.employeeId = data.employeeId;
+    doc.updatedAt = new Date().toISOString();
+
+    doc.statusHistory.push({
+      id: `sh-${Date.now()}`,
+      previousStatus: doc.status,
+      newStatus: doc.status,
+      changedBy: user.id,
+      changedByName: user.fullName,
+      changedAt: new Date().toISOString(),
+      remarks: 'Document data fields updated and re-saved.',
+    });
+
+    this.recordAudit(user.id, user.fullName, 'Document Information Updated', 'DOCUMENT', doc.id, `Updated data fields for ${doc.documentNumber || doc.id}`);
+    this.saveToStorage();
+    return { success: true, document: doc, pdfBase64: '' };
   }
 
   public generateDocumentNumber(id: string, signingMethod: 'PHYSICAL' | 'DIGITAL') {

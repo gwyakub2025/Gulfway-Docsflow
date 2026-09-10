@@ -116,6 +116,29 @@ export function App() {
   };
 
   useEffect(() => {
+    // Check if URL points to a public verification endpoint (e.g. /verify/:token, ?token=:token, or #/verify/:token)
+    if (typeof window !== 'undefined') {
+      const pathname = window.location.pathname;
+      const searchParams = new URLSearchParams(window.location.search);
+      const hash = window.location.hash;
+
+      let detectedToken = '';
+      if (pathname.includes('/verify/')) {
+        detectedToken = pathname.split('/verify/').pop()?.split('/')[0]?.split('?')[0] || '';
+      } else if (searchParams.get('token')) {
+        detectedToken = searchParams.get('token') || '';
+      } else if (searchParams.get('verify')) {
+        detectedToken = searchParams.get('verify') || '';
+      } else if (hash.includes('/verify/')) {
+        detectedToken = hash.split('/verify/').pop()?.split('/')[0]?.split('?')[0] || '';
+      }
+
+      if (detectedToken) {
+        setVerifyToken(decodeURIComponent(detectedToken));
+        setIsPublicVerifyMode(true);
+      }
+    }
+
     loadInitialData();
   }, []);
 

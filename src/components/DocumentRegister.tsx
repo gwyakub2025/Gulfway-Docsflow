@@ -19,6 +19,7 @@ import {
 import { DocumentRecord, Company, FormTemplate, User } from '../types/index.js';
 import { StatusBadge } from './StatusBadge.js';
 import { api } from '../api.js';
+import { downloadPdfFromUrl } from '../utils/pdfDownloadHelper.js';
 
 interface DocumentRegisterProps {
   documents: DocumentRecord[];
@@ -299,15 +300,19 @@ export const DocumentRegister: React.FC<DocumentRegisterProps> = ({
 
                           {/* Download PDF button */}
                           {doc.documentNumber && (
-                            <a
-                              href={`/api/documents/${doc.id}/pdf?download=true`}
-                              download={`${doc.documentNumber}.pdf`}
-                              onClick={(e) => e.stopPropagation()}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                downloadPdfFromUrl(
+                                  `/api/documents/${doc.id}/pdf?download=true`,
+                                  `${doc.documentNumber}.pdf`
+                                );
+                              }}
                               className="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-md transition-colors"
                               title="Download PDF"
                             >
                               <Download className="w-4 h-4" />
-                            </a>
+                            </button>
                           )}
 
                           {/* View Document Details */}

@@ -1,6 +1,5 @@
 import express from 'express';
 import path from 'path';
-import { createServer as createViteServer } from 'vite';
 import { store } from './server/store.js';
 import { AtomicNumberingEngine } from './server/atomicNumbering.js';
 import { PdfGenerationEngine } from './server/pdfEngine.js';
@@ -518,6 +517,67 @@ app.delete('/api/forms/:id', (req, res) => {
   res.json({ success: true, id });
 });
 
+/**
+ * Derives the reachable public base URL for verification links and QR codes.
+ * Respects query params, headers (including Reverse Proxy headers), Referer/Origin, and environment.
+ */
+export function getPublicBaseUrl(req: express.Request): string {
+  // 1. Explicit query parameter or custom header passed from client
+  if (req.query.baseUrl && typeof req.query.baseUrl === 'string' && req.query.baseUrl.trim() !== '') {
+    return req.query.baseUrl.trim().replace(/\/+$/, '');
+  }
+  if (req.body && typeof req.body.baseUrl === 'string' && req.body.baseUrl.trim() !== '') {
+    return req.body.baseUrl.trim().replace(/\/+$/, '');
+  }
+  if (req.headers['x-app-base-url'] && typeof req.headers['x-app-base-url'] === 'string') {
+    return (req.headers['x-app-base-url'] as string).trim().replace(/\/+$/, '');
+  }
+
+  // 2. Browser Referer or Origin headers
+  if (req.headers.origin && typeof req.headers.origin === 'string') {
+    try {
+      const parsed = new URL(req.headers.origin);
+      if (!parsed.hostname.includes('localhost') && !parsed.hostname.includes('127.0.0.1')) {
+        return parsed.origin;
+      }
+    } catch {}
+  }
+  if (req.headers.referer && typeof req.headers.referer === 'string') {
+    try {
+      const parsed = new URL(req.headers.referer);
+      if (!parsed.hostname.includes('localhost') && !parsed.hostname.includes('127.0.0.1')) {
+        return parsed.origin;
+      }
+    } catch {}
+  }
+
+  // 3. Reverse proxy forwarded headers
+  const proto = (req.headers['x-forwarded-proto'] as string) || (req.secure ? 'https' : 'http');
+  const forwardedHost = req.headers['x-forwarded-host'] as string;
+  if (forwardedHost && !forwardedHost.includes('localhost') && !forwardedHost.includes('127.0.0.1')) {
+    return `${proto}://${forwardedHost}`;
+  }
+
+  // 4. Host header if not localhost
+  const host = req.headers.host;
+  if (host && !host.includes('localhost') && !host.includes('127.0.0.1')) {
+    return `${proto}://${host}`;
+  }
+
+  // 5. Environment variable if configured
+  if (process.env.APP_URL && process.env.APP_URL !== 'MY_APP_URL') {
+    return process.env.APP_URL.replace(/\/+$/, '');
+  }
+
+  // 6. Fallback to origin or host
+  if (req.headers.origin) return req.headers.origin;
+  if (req.headers.referer) {
+    try { return new URL(req.headers.referer).origin; } catch {}
+  }
+
+  return host ? `${proto}://${host}` : 'http://localhost:3000';
+}
+
 // Ephemeral preview cache for live form previews
 const previewSessions = new Map<string, { bytes: Uint8Array; createdAt: number }>();
 
@@ -536,6 +596,7 @@ app.post('/api/forms/test-preview-pdf', async (req, res) => {
       },
       company,
       isDraftPreview: true,
+      appUrl: getPublicBaseUrl(req),
     });
 
     const sessionId = `prev-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
@@ -666,6 +727,7 @@ app.get('/api/documents/:id/pdf', async (req, res) => {
       document: doc,
       company,
       isDraftPreview: isDraft,
+      appUrl: getPublicBaseUrl(req),
     });
 
     const isDownload = req.query.download === 'true';
@@ -720,7 +782,7 @@ app.get('/api/documents/:id/qr-code', async (req, res) => {
 
   try {
     const qrResult = await QrGenerator.generateDocumentVerificationQr(doc, {
-      baseUrl: (req.headers['x-forwarded-proto'] ? `${req.headers['x-forwarded-proto']}://${req.headers.host}` : undefined),
+      baseUrl: getPublicBaseUrl(req),
     });
     res.json({
       documentId: doc.id,
@@ -741,7 +803,7 @@ app.get('/api/documents/:id/qr-code/image', async (req, res) => {
 
   try {
     const qrResult = await QrGenerator.generateDocumentVerificationQr(doc, {
-      baseUrl: (req.headers['x-forwarded-proto'] ? `${req.headers['x-forwarded-proto']}://${req.headers.host}` : undefined),
+      baseUrl: getPublicBaseUrl(req),
     });
     res.setHeader('Content-Type', 'image/png');
     res.setHeader('Cache-Control', 'public, max-age=86400');
@@ -806,6 +868,69 @@ app.post('/api/documents/draft', (req, res) => {
   res.status(201).json(draftDoc);
 });
 
+// UPDATE DOCUMENT DATA VALUES (Before Finalization/Void)
+app.put('/api/documents/:id', async (req, res) => {
+  if (!checkPermission(req, res, 'DOCUMENT_EDIT_DRAFT')) return;
+  const user = getCurrentUser();
+  const { id } = req.params;
+  const { values, employeeName, employeeId } = req.body;
+
+  const doc = store.documents.find((d) => d.id === id);
+  if (!doc) return res.status(404).json({ error: 'Document not found' });
+
+  if (doc.status === 'FINAL' || doc.status === 'VOID') {
+    return res.status(400).json({ error: 'Cannot modify a finalized or voided document' });
+  }
+
+  if (values && typeof values === 'object') {
+    doc.values = { ...doc.values, ...values };
+  }
+  if (employeeName) doc.employeeName = employeeName;
+  if (employeeId) doc.employeeId = employeeId;
+  doc.updatedAt = new Date().toISOString();
+
+  // Re-render PDF with updated form values
+  const template = resolveTemplateForDocument(doc);
+  const company = store.companies.find((c) => c.id === doc.companyId) || store.companies[0];
+  let pdfBase64 = '';
+  if (template) {
+    try {
+      const generated = await PdfGenerationEngine.generateDocumentPdf({
+        template,
+        document: doc,
+        company,
+        isDraftPreview: doc.status === 'DRAFT',
+        appUrl: getPublicBaseUrl(req),
+      });
+      pdfBase64 = generated.pdfBase64;
+    } catch (e: any) {
+      console.warn('PDF re-generation warning upon values update:', e.message);
+    }
+  }
+
+  const historyEntry: StatusHistoryEntry = {
+    id: `sh-${Date.now()}`,
+    previousStatus: doc.status,
+    newStatus: doc.status,
+    changedBy: user.id,
+    changedByName: user.fullName,
+    changedAt: new Date().toISOString(),
+    remarks: 'Document field values updated and document re-rendered.',
+  };
+  doc.statusHistory.push(historyEntry);
+
+  store.recordAudit(user.id, user.fullName, 'Document Data Updated', 'DOCUMENT', doc.id, {
+    remarks: `Updated values for ${doc.documentNumber || doc.id}`,
+    companyId: doc.companyId,
+  });
+
+  res.json({
+    success: true,
+    document: doc,
+    pdfBase64,
+  });
+});
+
 // GENERATE OFFICIAL DOCUMENT NUMBER (ATOMIC SERVER-SIDE ENGINE)
 app.post('/api/documents/:id/generate-number', async (req, res) => {
   if (!checkPermission(req, res, 'DOCUMENT_GENERATE')) return;
@@ -865,6 +990,7 @@ app.post('/api/documents/:id/generate-number', async (req, res) => {
       document: doc,
       company,
       isDraftPreview: false,
+      appUrl: getPublicBaseUrl(req),
     });
 
     doc.generatedPdfUrl = `/api/documents/${doc.id}/pdf`;
@@ -975,6 +1101,7 @@ app.post('/api/documents/:id/digital-sign', async (req, res) => {
       template,
       document: doc,
       company,
+      appUrl: getPublicBaseUrl(req),
     });
     doc.generatedPdfUrl = `/api/documents/${doc.id}/pdf`;
   }
@@ -1108,6 +1235,7 @@ app.post('/api/documents/:id/finalize', async (req, res) => {
     template,
     document: doc,
     company,
+    appUrl: getPublicBaseUrl(req),
   });
 
   const oldStatus = doc.status;
@@ -1311,7 +1439,8 @@ app.get('/api/dashboard/stats', (req, res) => {
 // VITE MIDDLEWARE & SERVER STARTUP
 // ==========================================
 async function startServer() {
-  if (process.env.NODE_ENV !== 'production') {
+  if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',

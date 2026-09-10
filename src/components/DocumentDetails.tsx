@@ -20,10 +20,15 @@ import {
   Maximize2,
   AlertCircle,
   Sparkles,
+  Pencil,
+  Save,
+  RefreshCw,
 } from 'lucide-react';
 import { DocumentRecord, User } from '../types/index.js';
 import { StatusBadge } from './StatusBadge.js';
 import { api } from '../api.js';
+import { PdfViewerCanvas } from './PdfViewerCanvas.js';
+import { downloadPdfFromUrl } from '../utils/pdfDownloadHelper.js';
 
 interface DocumentDetailsProps {
   document: DocumentRecord;
@@ -50,6 +55,12 @@ export const DocumentDetails: React.FC<DocumentDetailsProps> = ({
   const [voidModalOpen, setVoidModalOpen] = useState(false);
   const [finalizeModalOpen, setFinalizeModalOpen] = useState(false);
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editValues, setEditValues] = useState<Record<string, any>>(document.values || {});
+  const [pdfRefreshKey, setPdfRefreshKey] = useState(0);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [templateFields, setTemplateFields] = useState<any[]>([]);
+  const [hasLoadedTemplate, setHasLoadedTemplate] = useState(false);
 
   const [approvalRemarks, setApprovalRemarks] = useState('Sanctioned and approved according to company governance policy.');
   const [rejectRemarks, setRejectRemarks] = useState('');
@@ -147,6 +158,53 @@ export const DocumentDetails: React.FC<DocumentDetailsProps> = ({
     setTimeout(() => setCopiedToken(false), 2000);
   };
 
+  const handleOpenEditModal = async () => {
+    setEditValues({ ...(document.values || {}) });
+    setEditModalOpen(true);
+    if (!hasLoadedTemplate) {
+      try {
+        const forms = await api.getForms();
+        const t = forms.find((f) => f.id === document.formTemplateId);
+        if (t && t.fields && t.fields.length > 0) {
+          setTemplateFields(
+            t.fields.filter(
+              (fld: any) =>
+                fld.editable !== false &&
+                fld.type !== 'qr_code' &&
+                fld.type !== 'signature' &&
+                fld.type !== 'company_stamp' &&
+                fld.type !== 'document_number'
+            )
+          );
+        }
+        setHasLoadedTemplate(true);
+      } catch (err) {
+        console.warn('Could not load template fields for edit modal', err);
+      }
+    }
+  };
+
+  const handleSaveEditValues = async () => {
+    setIsSavingEdit(true);
+    try {
+      const empName = editValues.employee_name || editValues.rider_name || document.employeeName;
+      const empId = editValues.employee_id || document.employeeId;
+      const res = await api.updateDocument(document.id, {
+        values: editValues,
+        employeeName: empName,
+        employeeId: empId,
+      });
+      showNotification('success', 'Document information updated and PDF re-rendered successfully!');
+      setEditModalOpen(false);
+      setPdfRefreshKey((prev) => prev + 1);
+      onDocumentUpdated(res.document);
+    } catch (err: any) {
+      showNotification('error', `Failed to update document: ${err.message}`);
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
+
   // Lifecycle stage status flags
   const isNumbered = !!document.documentNumber;
   const isAwaitingSign = document.status === 'AWAITING_SIGNATURE' || document.status === 'NUMBER_ASSIGNED';
@@ -159,9 +217,12 @@ export const DocumentDetails: React.FC<DocumentDetailsProps> = ({
   const isApproved = document.status === 'APPROVED' || document.status === 'FINAL';
   const isFinal = document.status === 'FINAL';
 
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
   const verificationToken = document.secureVerificationToken || (document as any).verificationToken;
-  const pdfStreamUrl = `/api/documents/${document.id}/pdf`;
-  const pdfDownloadUrl = `/api/documents/${document.id}/pdf?download=true`;
+  const pdfStreamUrl = `/api/documents/${document.id}/pdf?baseUrl=${encodeURIComponent(origin)}&t=${pdfRefreshKey}`;
+  const pdfDownloadUrl = `/api/documents/${document.id}/pdf?download=true&baseUrl=${encodeURIComponent(origin)}&t=${pdfRefreshKey}`;
+  const qrImageUrl = `/api/documents/${document.id}/qr-code/image?baseUrl=${encodeURIComponent(origin)}&t=${pdfRefreshKey}`;
+  const publicVerifyUrl = `${origin}/verify/${verificationToken || ''}`;
 
   const historyList = document.statusHistory || (document as any).history || [];
 
@@ -230,15 +291,26 @@ export const DocumentDetails: React.FC<DocumentDetailsProps> = ({
           </button>
 
           {/* PDF Download Button */}
-          <a
-            href={pdfDownloadUrl}
-            download={`${document.documentNumber || 'DOCUMENT'}.pdf`}
+          <button
+            onClick={() => downloadPdfFromUrl(pdfDownloadUrl, `${document.documentNumber || 'DOCUMENT'}.pdf`)}
             className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs"
             title="Download official PDF file"
           >
             <Download className="w-4 h-4" />
             <span>Download PDF</span>
-          </a>
+          </button>
+
+          {/* Edit Information Button (Available for non-final, non-void docs) */}
+          {document.status !== 'FINAL' && document.status !== 'VOID' && (
+            <button
+              onClick={handleOpenEditModal}
+              className="px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-2xs"
+              title="Edit filled form information in this template"
+            >
+              <Pencil className="w-4 h-4 text-amber-600" />
+              <span>Edit Information</span>
+            </button>
+          )}
 
           {/* SIGNING ACTIONS: Display BOTH options clearly when awaiting signature */}
           {isAwaitingSign && (
@@ -510,58 +582,47 @@ export const DocumentDetails: React.FC<DocumentDetailsProps> = ({
                   <Maximize2 className="w-3.5 h-3.5" />
                   <span>Full Screen</span>
                 </button>
-                <a
-                  href={pdfDownloadUrl}
-                  download={`${document.documentNumber || 'DOCUMENT'}.pdf`}
+                <button
+                  onClick={() => downloadPdfFromUrl(pdfDownloadUrl, `${document.documentNumber || 'DOCUMENT'}.pdf`)}
                   className="px-2.5 py-1 text-slate-600 hover:text-blue-600 hover:bg-blue-50 rounded text-xs font-semibold flex items-center gap-1 transition-colors"
                 >
                   <Download className="w-3.5 h-3.5" />
                   <span>Download</span>
-                </a>
+                </button>
               </div>
             </div>
 
-            {/* Embedded PDF Viewer Frame */}
-            <div className="w-full bg-slate-100 rounded-xl border border-slate-300 overflow-hidden relative shadow-inner">
-              <object
-                data={pdfStreamUrl}
-                type="application/pdf"
-                className="w-full h-[520px]"
-              >
-                <div className="flex flex-col items-center justify-center h-[520px] p-6 text-center space-y-3">
-                  <FileText className="w-12 h-12 text-slate-400" />
-                  <div className="text-sm font-bold text-slate-700">
-                    Official Document Generated ({document.documentNumber || 'Draft'})
-                  </div>
-                  <p className="text-xs text-slate-500 max-w-md">
-                    To view the generated PDF with official headers, sequential serial numbers, and verification QR code, click below.
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => setPreviewModalOpen(true)}
-                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-xs"
-                    >
-                      Open PDF Preview
-                    </button>
-                    <a
-                      href={pdfDownloadUrl}
-                      download={`${document.documentNumber || 'DOCUMENT'}.pdf`}
-                      className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-lg text-xs font-bold"
-                    >
-                      Download File
-                    </a>
-                  </div>
-                </div>
-              </object>
+            {/* Embedded Interactive PDF Viewer Frame */}
+            <div className="w-full bg-slate-900 rounded-xl overflow-hidden shadow-inner h-[580px]">
+              <PdfViewerCanvas
+                pdfUrl={pdfStreamUrl}
+                documentNumber={document.documentNumber || 'Draft'}
+                title={`${document.formName || 'Document'} Official Sheet`}
+                onClose={() => setPreviewModalOpen(true)}
+                showDownloadButton={true}
+                showOpenInNewTabButton={true}
+                className="h-[580px]"
+              />
             </div>
           </div>
 
           {/* Form Captured Values */}
           <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-2xs space-y-4">
-            <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-              <FileText className="w-4 h-4 text-blue-600" />
-              <span>Captured Form Data Fields</span>
-            </h3>
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                <FileText className="w-4 h-4 text-blue-600" />
+                <span>Captured Form Data Fields</span>
+              </h3>
+              {document.status !== 'FINAL' && document.status !== 'VOID' && (
+                <button
+                  onClick={handleOpenEditModal}
+                  className="px-2.5 py-1 text-xs font-bold text-amber-700 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-md flex items-center gap-1 transition-colors"
+                >
+                  <Pencil className="w-3 h-3" />
+                  <span>Edit Fields</span>
+                </button>
+              )}
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {Object.entries(document.values || {}).map(([key, val]) => (
                 <div key={key} className="bg-slate-50 p-3 rounded-lg border border-slate-100">
@@ -666,22 +727,31 @@ export const DocumentDetails: React.FC<DocumentDetailsProps> = ({
                 <div className="pt-2 space-y-3">
                   <div className="bg-white p-3 rounded-lg flex flex-col items-center justify-center border border-white/20 text-slate-900 shadow-xs">
                     <img
-                      src={`/api/documents/${document.id}/qr-code/image`}
+                      src={qrImageUrl}
                       alt="Document Verification QR Code"
-                      className="w-36 h-36 rounded"
+                      className="w-36 h-36 rounded shadow-xs"
                     />
-                    <span className="text-[10px] text-slate-500 font-mono mt-2 text-center">
+                    <span className="text-[10px] text-slate-600 font-semibold mt-2 text-center">
                       Official Verification QR Code
                     </span>
-                    <div className="flex items-center gap-1 mt-1">
-                      <span className="text-[9px] text-slate-400 font-mono truncate max-w-[160px]">
-                        Token: {verificationToken}
+                    <span className="text-[9px] text-slate-400 text-center mt-0.5">
+                      Scan with mobile phone to verify authenticity against registry
+                    </span>
+                    <div className="flex items-center gap-1 mt-2 w-full justify-between bg-slate-50 px-2 py-1 rounded border border-slate-200">
+                      <span className="text-[9px] text-slate-600 font-mono truncate max-w-[150px]" title={publicVerifyUrl}>
+                        {publicVerifyUrl}
                       </span>
                       <button
-                        onClick={copyToken}
-                        className="text-[9px] text-blue-600 hover:underline shrink-0"
+                        onClick={() => {
+                          if (navigator.clipboard) {
+                            navigator.clipboard.writeText(publicVerifyUrl);
+                            setCopiedToken(true);
+                            setTimeout(() => setCopiedToken(false), 2000);
+                          }
+                        }}
+                        className="text-[9px] text-blue-600 hover:underline font-semibold shrink-0"
                       >
-                        {copiedToken ? 'Copied' : 'Copy'}
+                        {copiedToken ? 'Copied' : 'Copy Link'}
                       </button>
                     </div>
                   </div>
@@ -858,53 +928,172 @@ export const DocumentDetails: React.FC<DocumentDetailsProps> = ({
         </div>
       )}
 
-      {/* FULL SCREEN PDF PREVIEW MODAL */}
-      {previewModalOpen && (
+      {/* EDIT INFORMATION MODAL */}
+      {editModalOpen && (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
-          <div className="bg-white rounded-2xl max-w-5xl w-full h-[90vh] p-6 shadow-2xl border border-slate-200 flex flex-col space-y-4">
+          <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] p-6 shadow-2xl border border-slate-200 flex flex-col space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-slate-200 shrink-0">
               <div className="flex items-center gap-2">
-                <FileText className="w-5 h-5 text-blue-600" />
+                <div className="w-9 h-9 rounded-lg bg-amber-100 flex items-center justify-center text-amber-700">
+                  <Pencil className="w-5 h-5" />
+                </div>
                 <div>
                   <h3 className="text-sm font-bold text-slate-900">
-                    {document.documentNumber || 'Draft Preview'} — {document.formName}
+                    Edit Document Information
                   </h3>
-                  <span className="text-[11px] text-slate-500">
-                    Official Document with Embedded QR Code & Sequential Serial Number
+                  <span className="text-[11px] text-slate-500 font-medium">
+                    {document.documentNumber || 'Draft'} • {document.formName}
                   </span>
                 </div>
               </div>
-              <div className="flex items-center gap-3">
-                <a
-                  href={pdfDownloadUrl}
-                  download={`${document.documentNumber || 'DOCUMENT'}.pdf`}
-                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Download</span>
-                </a>
+              <button
+                onClick={() => setEditModalOpen(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-700 text-sm font-bold rounded-lg hover:bg-slate-100"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-3 bg-amber-50/80 border border-amber-200/60 rounded-xl text-xs text-amber-900 space-y-1">
+              <div className="font-bold flex items-center gap-1.5">
+                <AlertCircle className="w-4 h-4 text-amber-700 shrink-0" />
+                <span>Update Document Content</span>
+              </div>
+              <p className="text-[11px] text-amber-800 leading-relaxed">
+                Edit the field values below. Upon saving, the document data will update and the PDF will be re-rendered with your new information.
+              </p>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+              {templateFields.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {templateFields.map((fld) => {
+                    const val = editValues[fld.name] ?? '';
+                    return (
+                      <div
+                        key={fld.id}
+                        className={fld.type === 'textarea' || fld.width > 60 ? 'md:col-span-2' : ''}
+                      >
+                        <label className="block text-xs font-bold text-slate-700 mb-1">
+                          {fld.label}
+                          {fld.required && <span className="text-rose-500 ml-0.5">*</span>}
+                        </label>
+                        {fld.type === 'textarea' ? (
+                          <textarea
+                            value={val}
+                            onChange={(e) =>
+                              setEditValues({ ...editValues, [fld.name]: e.target.value })
+                            }
+                            rows={3}
+                            className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-hidden"
+                            placeholder={fld.placeholder || `Enter ${fld.label}`}
+                          />
+                        ) : fld.type === 'dropdown' && fld.options && fld.options.length > 0 ? (
+                          <select
+                            value={val}
+                            onChange={(e) =>
+                              setEditValues({ ...editValues, [fld.name]: e.target.value })
+                            }
+                            className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-hidden bg-white"
+                          >
+                            <option value="">-- Select {fld.label} --</option>
+                            {fld.options.map((opt: string) => (
+                              <option key={opt} value={opt}>
+                                {opt}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            type={fld.type === 'number' ? 'number' : fld.type === 'date' ? 'date' : 'text'}
+                            value={val}
+                            onChange={(e) =>
+                              setEditValues({ ...editValues, [fld.name]: e.target.value })
+                            }
+                            className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-hidden"
+                            placeholder={fld.placeholder || `Enter ${fld.label}`}
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {Object.keys(editValues).length === 0 ? (
+                    <div className="text-center py-6 text-slate-400 text-xs">
+                      No custom fields found. You can add field values below.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {Object.entries(editValues).map(([k, v]) => (
+                        <div key={k} className="space-y-1">
+                          <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+                            {k.replace(/_/g, ' ')}
+                          </label>
+                          <input
+                            type="text"
+                            value={String(v ?? '')}
+                            onChange={(e) =>
+                              setEditValues({ ...editValues, [k]: e.target.value })
+                            }
+                            className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-hidden"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between pt-3 border-t border-slate-200 shrink-0">
+              <span className="text-[11px] text-slate-500">
+                Changes will be saved to document record and re-render PDF preview.
+              </span>
+              <div className="flex items-center gap-2">
                 <button
-                  onClick={() => setPreviewModalOpen(false)}
-                  className="p-1.5 text-slate-400 hover:text-slate-700 text-sm font-bold rounded-lg hover:bg-slate-100"
+                  onClick={() => setEditModalOpen(false)}
+                  disabled={isSavingEdit}
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900"
                 >
-                  ✕ Close
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveEditValues}
+                  disabled={isSavingEdit}
+                  className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold shadow-xs flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                >
+                  {isSavingEdit ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Saving & Re-rendering...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-3.5 h-3.5" />
+                      <span>Save Changes & Update PDF</span>
+                    </>
+                  )}
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
 
-            <div className="flex-1 w-full bg-slate-100 rounded-xl border border-slate-300 overflow-hidden">
-              <object
-                data={pdfStreamUrl}
-                type="application/pdf"
-                className="w-full h-full"
-              >
-                <iframe
-                  src={pdfStreamUrl}
-                  className="w-full h-full border-0"
-                  title="PDF Preview"
-                />
-              </object>
-            </div>
+      {/* FULL SCREEN PDF PREVIEW MODAL */}
+      {previewModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="max-w-5xl w-full h-[90vh]">
+            <PdfViewerCanvas
+              pdfUrl={pdfStreamUrl}
+              documentNumber={document.documentNumber || 'Draft Preview'}
+              title={`${document.documentNumber || 'Draft Preview'} — ${document.formName} (Official Serial & QR)`}
+              onClose={() => setPreviewModalOpen(false)}
+              showDownloadButton={true}
+              showOpenInNewTabButton={true}
+            />
           </div>
         </div>
       )}

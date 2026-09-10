@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { FormTemplate, Company, DocumentRecord } from '../types/index.js';
 import { api } from '../api.js';
+import { PdfViewerCanvas } from './PdfViewerCanvas.js';
 
 interface DocumentCreatorProps {
   forms: FormTemplate[];
@@ -563,53 +564,17 @@ export const DocumentCreator: React.FC<DocumentCreatorProps> = ({
 
       {/* DRAFT PREVIEW MODAL */}
       {previewPdfModal && (
-        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
-          <div className="bg-white rounded-2xl max-w-5xl w-full h-[88vh] p-6 shadow-2xl border border-slate-200 flex flex-col space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 shrink-0">
-              <div className="flex items-center gap-2">
-                <Eye className="w-4 h-4 text-blue-600" />
-                <div>
-                  <h3 className="text-sm font-bold text-slate-900">
-                    Draft Document Preview (Watermarked)
-                  </h3>
-                  <span className="text-[11px] text-slate-500">
-                    Live layout rendering with template coordinates and sample values
-                  </span>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <a
-                  href={previewPdfModal}
-                  target="_blank"
-                  rel="noreferrer"
-                  download="draft-preview.pdf"
-                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Download Draft</span>
-                </a>
-                <button
-                  onClick={() => setPreviewPdfModal(null)}
-                  className="text-slate-400 hover:text-slate-700 font-bold text-sm px-2 py-1"
-                >
-                  ✕ Close
-                </button>
-              </div>
-            </div>
-
-            <div className="flex-1 w-full bg-slate-100 rounded-xl border border-slate-300 overflow-hidden">
-              <object
-                data={previewPdfModal}
-                type="application/pdf"
-                className="w-full h-full"
-              >
-                <iframe
-                  src={previewPdfModal}
-                  className="w-full h-full border-0"
-                  title="PDF Draft Preview"
-                />
-              </object>
-            </div>
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="max-w-5xl w-full h-[90vh]">
+            <PdfViewerCanvas
+              pdfBase64={previewPdfModal.startsWith('data:') ? previewPdfModal : undefined}
+              pdfUrl={!previewPdfModal.startsWith('data:') ? previewPdfModal : undefined}
+              documentNumber="DRAFT-PREVIEW"
+              title="Draft Document Layout Preview (Watermarked)"
+              onClose={() => setPreviewPdfModal(null)}
+              showDownloadButton={true}
+              showOpenInNewTabButton={true}
+            />
           </div>
         </div>
       )}

@@ -109,18 +109,29 @@ export const DigitalSignatureModal: React.FC<DigitalSignatureModalProps> = ({
     ctx.lineJoin = 'round';
   }, [penColor, penSize, activeTab]);
 
+  const getCoordinates = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
+    const rect = canvas.getBoundingClientRect();
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    const scaleX = rect.width > 0 ? canvas.width / rect.width : 1;
+    const scaleY = rect.height > 0 ? canvas.height / rect.height : 1;
+    return {
+      x: (clientX - rect.left) * scaleX,
+      y: (clientY - rect.top) * scaleY,
+    };
+  };
+
   const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const rect = canvas.getBoundingClientRect();
-    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-
+    const { x, y } = getCoordinates(e);
     ctx.beginPath();
-    ctx.moveTo(clientX - rect.left, clientY - rect.top);
+    ctx.moveTo(x, y);
     setIsDrawing(true);
     setHasDrawn(true);
   };
@@ -132,11 +143,8 @@ export const DigitalSignatureModal: React.FC<DigitalSignatureModalProps> = ({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const rect = canvas.getBoundingClientRect();
-    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-
-    ctx.lineTo(clientX - rect.left, clientY - rect.top);
+    const { x, y } = getCoordinates(e);
+    ctx.lineTo(x, y);
     ctx.stroke();
   };
 
@@ -183,19 +191,50 @@ export const DigitalSignatureModal: React.FC<DigitalSignatureModalProps> = ({
       finalSignatureUrl = uploadedSigUrl;
     }
 
+    const targetSlot = selectedSlotId || 'fld-emp-sig';
+    const sigType = activeTab === 'DRAW' ? 'DRAWN' : 'UPLOADED';
+
+    console.log('[DigitalSignatureModal] Applying signature payload (BEFORE API UPDATE):', {
+      documentId: document.id,
+      documentNumber: document.documentNumber,
+      selectedSlotId: targetSlot,
+      signatureType: sigType,
+      payloadDataLength: finalSignatureUrl.length,
+      payloadPreview: finalSignatureUrl.substring(0, 50) + '...',
+      currentDocStatus: document.status,
+      timestamp: new Date().toISOString(),
+    });
+
     setIsSubmitting(true);
     setErrorMsg('');
 
     try {
       const res = await api.applyDigitalSignature(
         document.id,
-        selectedSlotId || 'fld-emp-sig',
+        targetSlot,
         finalSignatureUrl,
-        activeTab === 'DRAW' ? 'DRAWN' : 'UPLOADED'
+        sigType
       );
+
+      console.log('[DigitalSignatureModal] Received API response (AFTER API UPDATE):', {
+        success: res.success,
+        updatedDocumentId: res.document?.id,
+        previousStatus: document.status,
+        newStatus: res.document?.status,
+        totalSignatures: res.document?.signatures?.length,
+        signatures: res.document?.signatures?.map((s) => ({
+          id: s.id,
+          fieldId: s.fieldId,
+          signerName: s.signerName,
+          type: s.type,
+          dataLength: s.signatureDataUrl?.length,
+        })),
+        generatedPdfUrl: res.document?.generatedPdfUrl,
+      });
 
       onSuccess(res.document);
     } catch (err: any) {
+      console.error('[DigitalSignatureModal] API update failed:', err);
       setErrorMsg(`Signing failed: ${err.message}`);
     } finally {
       setIsSubmitting(false);

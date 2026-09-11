@@ -572,6 +572,54 @@ export const DocumentDetails: React.FC<DocumentDetailsProps> = ({
             </div>
           )}
 
+          {/* Uploaded Physical Signed Copy */}
+          {document.signedDocumentUrl && (
+            <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-2xs space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                  <FileCheck2 className="w-4 h-4 text-emerald-600" />
+                  <span>Scanned Physical Signed Copy</span>
+                </h3>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                  WET-INK SIGNED COPY ATTACHED
+                </span>
+              </div>
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 flex flex-col md:flex-row items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 bg-white border border-slate-200 rounded-lg flex items-center justify-center shrink-0 overflow-hidden shadow-2xs">
+                    {document.signedDocumentUrl.startsWith('data:image/') || document.signedDocumentUrl.includes('image/') ? (
+                      <img
+                        src={document.signedDocumentUrl}
+                        alt="Scanned Physical Signature"
+                        className="w-full h-full object-contain"
+                      />
+                    ) : (
+                      <FileText className="w-6 h-6 text-emerald-600" />
+                    )}
+                  </div>
+                  <div>
+                    <div className="text-xs font-bold text-slate-800">Physical Wet-Ink Signed Document Scan</div>
+                    <div className="text-[11px] text-slate-500">
+                      Uploaded and verified as official wet-ink signed attachment.
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <a
+                    href={document.signedDocumentUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    download={`${document.documentNumber || 'DOCUMENT'}_SIGNED_SCAN.pdf`}
+                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>View / Download Scan</span>
+                  </a>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Embedded Document PDF Preview Section */}
           <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-2xs space-y-4">
             <div className="flex items-center justify-between">

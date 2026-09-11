@@ -664,40 +664,50 @@ export class PdfGenerationEngine {
       const clean = dataUrlOrBase64.trim();
       if (!clean) return null;
 
-      let buf: Buffer;
-
+      let rawBase64 = clean;
       if (clean.startsWith('data:image/svg+xml')) {
         return null;
       } else if (clean.startsWith('data:image/png;base64,')) {
-        buf = Buffer.from(clean.replace(/^data:image\/png;base64,/, ''), 'base64');
+        rawBase64 = clean.replace(/^data:image\/png;base64,/, '');
       } else if (clean.startsWith('data:image/jpeg;base64,') || clean.startsWith('data:image/jpg;base64,')) {
-        buf = Buffer.from(clean.replace(/^data:image\/(jpeg|jpg);base64,/, ''), 'base64');
+        rawBase64 = clean.replace(/^data:image\/(jpeg|jpg);base64,/, '');
       } else if (clean.startsWith('data:')) {
         const base64Index = clean.indexOf(';base64,');
         if (base64Index !== -1) {
-          buf = Buffer.from(clean.substring(base64Index + 8), 'base64');
-        } else {
-          buf = Buffer.from(clean, 'base64');
+          rawBase64 = clean.substring(base64Index + 8);
         }
-      } else {
-        buf = Buffer.from(clean, 'base64');
       }
 
-      if (!buf || buf.length === 0) return null;
+      // Strip all whitespace, newlines, and carriage returns
+      const sanitizedBase64 = rawBase64.replace(/\s+/g, '');
+      const buf = Buffer.from(sanitizedBase64, 'base64');
+
+      if (!buf || buf.length === 0) {
+        console.warn('[pdfEngine] Buffer is empty after base64 decode');
+        return null;
+      }
 
       // Check binary magic bytes:
       // PNG: 0x89 0x50 0x4E 0x47
       // JPEG: 0xFF 0xD8
       if (buf.length >= 4 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) {
-        return await pdfDoc.embedPng(buf);
+        const img = await pdfDoc.embedPng(buf);
+        console.log(`[pdfEngine] Successfully embedded PNG image (${buf.length} bytes, dimensions: ${img.width}x${img.height})`);
+        return img;
       } else if (buf.length >= 2 && buf[0] === 0xff && buf[1] === 0xd8) {
-        return await pdfDoc.embedJpg(buf);
+        const img = await pdfDoc.embedJpg(buf);
+        console.log(`[pdfEngine] Successfully embedded JPG image (${buf.length} bytes, dimensions: ${img.width}x${img.height})`);
+        return img;
       } else {
         // Fallback: try PNG first, then JPG
         try {
-          return await pdfDoc.embedPng(buf);
+          const img = await pdfDoc.embedPng(buf);
+          console.log(`[pdfEngine] Successfully embedded image as PNG fallback (${buf.length} bytes)`);
+          return img;
         } catch {
-          return await pdfDoc.embedJpg(buf);
+          const img = await pdfDoc.embedJpg(buf);
+          console.log(`[pdfEngine] Successfully embedded image as JPG fallback (${buf.length} bytes)`);
+          return img;
         }
       }
     } catch (err: any) {

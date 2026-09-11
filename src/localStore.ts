@@ -1167,6 +1167,15 @@ class ClientLocalStorageStore {
     const user = this.getCurrentUser();
     const doc = this.getDocument(id);
 
+    console.log('[localStore] applyDigitalSignature (BEFORE STORE UPDATE):', {
+      documentId: id,
+      fieldId,
+      type,
+      signatureDataUrlLength: signatureDataUrl?.length,
+      currentDocStatus: doc.status,
+      user: user.fullName,
+    });
+
     const sigEntry = {
       id: `sig-${Date.now()}`,
       fieldId,
@@ -1201,6 +1210,14 @@ class ClientLocalStorageStore {
 
     this.recordAudit(user.id, user.fullName, 'Document Digitally Signed', 'DOCUMENT', doc.id, `Signed by ${user.fullName}`);
     this.saveToStorage();
+
+    console.log('[localStore] applyDigitalSignature (AFTER STORE UPDATE):', {
+      documentId: doc.id,
+      oldStatus,
+      newStatus: doc.status,
+      signaturesCount: doc.signatures.length,
+    });
+
     return { success: true, document: doc };
   }
 
@@ -1208,7 +1225,38 @@ class ClientLocalStorageStore {
     const user = this.getCurrentUser();
     const doc = this.getDocument(id);
 
+    console.log('[localStore] uploadSignedDocument (BEFORE STORE UPDATE):', {
+      documentId: id,
+      signedFileUrlLength: signedFileUrl?.length,
+      currentDocStatus: doc.status,
+      remarks,
+    });
+
     doc.signedDocumentUrl = signedFileUrl;
+
+    // If user uploaded an image format, also record in doc.signatures
+    if (signedFileUrl && (signedFileUrl.startsWith('data:image/') || signedFileUrl.includes('image/'))) {
+      const sigEntry = {
+        id: `sig-phys-${Date.now()}`,
+        fieldId: 'fld-emp-sig',
+        signerName: user.fullName,
+        signerRole: user.roleName || 'PHYSICAL_SIGNATORY',
+        signatureDataUrl: signedFileUrl,
+        type: 'UPLOADED' as const,
+        signedAt: new Date().toISOString(),
+        userId: user.id,
+      };
+
+      const existingSigIndex = doc.signatures.findIndex(
+        (s) => s.fieldId === 'fld-emp-sig' || s.type === 'UPLOADED'
+      );
+      if (existingSigIndex >= 0) {
+        doc.signatures[existingSigIndex] = sigEntry;
+      } else {
+        doc.signatures.push(sigEntry);
+      }
+    }
+
     const oldStatus = doc.status;
     doc.status = 'AWAITING_APPROVAL';
     doc.updatedAt = new Date().toISOString();
@@ -1225,6 +1273,15 @@ class ClientLocalStorageStore {
 
     this.recordAudit(user.id, user.fullName, 'Signed Document Scan Uploaded', 'DOCUMENT', doc.id, remarks || 'Physical scan uploaded');
     this.saveToStorage();
+
+    console.log('[localStore] uploadSignedDocument (AFTER STORE UPDATE):', {
+      documentId: doc.id,
+      oldStatus,
+      newStatus: doc.status,
+      signaturesCount: doc.signatures.length,
+      signedDocumentUrlPresent: !!doc.signedDocumentUrl,
+    });
+
     return { success: true, document: doc };
   }
 

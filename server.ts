@@ -1044,6 +1044,15 @@ app.post('/api/documents/:id/upload-signed', async (req, res) => {
   const { id } = req.params;
   const { signedFileUrl, remarks } = req.body;
 
+  console.log('[API /api/documents/:id/upload-signed] Processing physical signature upload (BEFORE UPDATE):', {
+    documentId: id,
+    userId: user.id,
+    userFullName: user.fullName,
+    signedFileUrlLength: signedFileUrl?.length,
+    signedFileUrlPrefix: signedFileUrl?.substring(0, 40),
+    remarks,
+  });
+
   const doc = store.documents.find((d) => d.id === id);
   if (!doc) return res.status(404).json({ error: 'Document not found' });
 
@@ -1053,13 +1062,61 @@ app.post('/api/documents/:id/upload-signed', async (req, res) => {
 
   doc.signedDocumentUrl = signedFileUrl;
   const oldStatus = doc.status;
-  doc.status = 'SIGNED';
+  // Progress document to AWAITING_APPROVAL so it moves to next step
+  doc.status = 'AWAITING_APPROVAL';
   doc.updatedAt = new Date().toISOString();
+
+  // If user uploaded an image format (PNG, JPEG, etc.), also record in doc.signatures
+  if (signedFileUrl && (signedFileUrl.startsWith('data:image/') || signedFileUrl.includes('image/'))) {
+    const template = resolveTemplateForDocument(doc);
+    const applicantSlot = template?.fields.find(
+      (f) => f.type === 'signature' && (f.signerRole === 'USER' || !f.name.includes('hr'))
+    );
+    const targetFieldId = applicantSlot ? applicantSlot.id : 'fld-emp-sig';
+
+    const sigEntry = {
+      id: `sig-phys-${Date.now()}`,
+      fieldId: targetFieldId,
+      signerName: user.fullName,
+      signerRole: user.roleName || 'PHYSICAL_SIGNATORY',
+      signatureDataUrl: signedFileUrl,
+      type: 'UPLOADED' as const,
+      signedAt: new Date().toISOString(),
+      userId: user.id,
+      ipAddress: req.ip || '127.0.0.1',
+    };
+
+    const existingSigIndex = doc.signatures.findIndex(
+      (s) => s.fieldId === targetFieldId || s.type === 'UPLOADED'
+    );
+    if (existingSigIndex >= 0) {
+      doc.signatures[existingSigIndex] = sigEntry;
+    } else {
+      doc.signatures.push(sigEntry);
+    }
+  }
+
+  // Re-generate PDF with newly attached signature/status
+  const template = resolveTemplateForDocument(doc);
+  const company = store.companies.find((c) => c.id === doc.companyId) || store.companies[0];
+  if (template) {
+    try {
+      await PdfGenerationEngine.generateDocumentPdf({
+        template,
+        document: doc,
+        company,
+        appUrl: getPublicBaseUrl(req),
+      });
+      doc.generatedPdfUrl = `/api/documents/${doc.id}/pdf`;
+    } catch (e: any) {
+      console.warn('[API /upload-signed] PDF regeneration notice:', e?.message);
+    }
+  }
 
   const historyEntry: StatusHistoryEntry = {
     id: `sh-${Date.now()}`,
     previousStatus: oldStatus,
-    newStatus: 'SIGNED',
+    newStatus: 'AWAITING_APPROVAL',
     changedBy: user.id,
     changedByName: user.fullName,
     changedAt: new Date().toISOString(),
@@ -1069,9 +1126,19 @@ app.post('/api/documents/:id/upload-signed', async (req, res) => {
 
   store.recordAudit(user.id, user.fullName, 'Signed Copy Uploaded', 'DOCUMENT', doc.id, {
     oldValue: oldStatus,
-    newValue: 'SIGNED',
+    newValue: 'AWAITING_APPROVAL',
     remarks: `Scanned physical signed copy uploaded for ${doc.documentNumber}`,
     companyId: doc.companyId,
+  });
+
+  console.log('[API /api/documents/:id/upload-signed] Updated document (AFTER UPDATE):', {
+    documentId: doc.id,
+    documentNumber: doc.documentNumber,
+    previousStatus: oldStatus,
+    newStatus: doc.status,
+    signaturesCount: doc.signatures.length,
+    signedDocumentUrlPresent: !!doc.signedDocumentUrl,
+    generatedPdfUrl: doc.generatedPdfUrl,
   });
 
   res.json({ success: true, document: doc });
@@ -1083,6 +1150,17 @@ app.post('/api/documents/:id/digital-sign', async (req, res) => {
   const user = getCurrentUser();
   const { id } = req.params;
   const { fieldId, signatureDataUrl, type } = req.body;
+
+  console.log('[API /api/documents/:id/digital-sign] Processing signature payload (BEFORE UPDATE):', {
+    documentId: id,
+    fieldId,
+    type,
+    signatureDataUrlLength: signatureDataUrl?.length,
+    signatureDataUrlPrefix: signatureDataUrl?.substring(0, 40),
+    signerName: user.fullName,
+    signerRole: user.roleName,
+    timestamp: new Date().toISOString(),
+  });
 
   const doc = store.documents.find((d) => d.id === id);
   if (!doc) return res.status(404).json({ error: 'Document not found' });
@@ -1130,20 +1208,30 @@ app.post('/api/documents/:id/digital-sign', async (req, res) => {
   }
 
   const oldStatus = doc.status;
-  if (doc.status === 'DRAFT' || doc.status === 'NUMBER_ASSIGNED') {
-    doc.status = 'SIGNED';
+  // Progress status to AWAITING_APPROVAL when signing
+  if (
+    doc.status === 'DRAFT' ||
+    doc.status === 'NUMBER_ASSIGNED' ||
+    doc.status === 'AWAITING_SIGNATURE' ||
+    doc.status === 'SIGNED'
+  ) {
+    doc.status = 'AWAITING_APPROVAL';
   }
   doc.updatedAt = new Date().toISOString();
 
   // Re-generate PDF with newly embedded signature
   if (template) {
-    const updatedPdf = await PdfGenerationEngine.generateDocumentPdf({
-      template,
-      document: doc,
-      company,
-      appUrl: getPublicBaseUrl(req),
-    });
-    doc.generatedPdfUrl = `/api/documents/${doc.id}/pdf`;
+    try {
+      const updatedPdf = await PdfGenerationEngine.generateDocumentPdf({
+        template,
+        document: doc,
+        company,
+        appUrl: getPublicBaseUrl(req),
+      });
+      doc.generatedPdfUrl = `/api/documents/${doc.id}/pdf`;
+    } catch (e: any) {
+      console.warn('[API /digital-sign] PDF regeneration notice:', e?.message);
+    }
   }
 
   doc.statusHistory.push({
@@ -1157,9 +1245,27 @@ app.post('/api/documents/:id/digital-sign', async (req, res) => {
   });
 
   store.recordAudit(user.id, user.fullName, 'Digital Signature Applied', 'DOCUMENT', doc.id, {
-    newValue: `Signed by ${user.fullName}`,
+    oldValue: oldStatus,
+    newValue: doc.status,
     remarks: `Signature captured on field: ${targetFieldId}`,
     companyId: doc.companyId,
+  });
+
+  console.log('[API /api/documents/:id/digital-sign] Updated document (AFTER UPDATE):', {
+    documentId: doc.id,
+    documentNumber: doc.documentNumber,
+    previousStatus: oldStatus,
+    newStatus: doc.status,
+    targetFieldId,
+    signaturesCount: doc.signatures.length,
+    signatures: doc.signatures.map((s) => ({
+      id: s.id,
+      fieldId: s.fieldId,
+      signerName: s.signerName,
+      type: s.type,
+      signatureDataLength: s.signatureDataUrl?.length,
+    })),
+    generatedPdfUrl: doc.generatedPdfUrl,
   });
 
   res.json({ success: true, document: doc });

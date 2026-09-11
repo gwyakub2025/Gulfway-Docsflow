@@ -62,11 +62,46 @@ export const PhysicalSignatureModal: React.FC<PhysicalSignatureModalProps> = ({
       return;
     }
 
+    const payloadType = uploadedSignedFileUrl.startsWith('data:')
+      ? uploadedSignedFileUrl.substring(0, uploadedSignedFileUrl.indexOf(';'))
+      : 'unknown';
+
+    console.log('[PhysicalSignatureModal] Submitting physical signature upload (BEFORE API UPDATE):', {
+      documentId: document.id,
+      documentNumber: document.documentNumber,
+      fileName,
+      remarks,
+      payloadType,
+      payloadDataLength: uploadedSignedFileUrl.length,
+      currentDocStatus: document.status,
+      timestamp: new Date().toISOString(),
+    });
+
     setIsSubmitting(true);
+    setErrorMsg('');
+
     try {
       const res = await api.uploadSignedDocument(document.id, uploadedSignedFileUrl, remarks);
+
+      console.log('[PhysicalSignatureModal] Received API response (AFTER API UPDATE):', {
+        success: res.success,
+        updatedDocumentId: res.document?.id,
+        previousStatus: document.status,
+        newStatus: res.document?.status,
+        signedDocumentUrlPresent: !!res.document?.signedDocumentUrl,
+        signedDocumentUrlLength: res.document?.signedDocumentUrl?.length,
+        totalSignatures: res.document?.signatures?.length,
+        signatures: res.document?.signatures?.map((s) => ({
+          id: s.id,
+          fieldId: s.fieldId,
+          signerName: s.signerName,
+          type: s.type,
+        })),
+      });
+
       onSuccess(res.document);
     } catch (err: any) {
+      console.error('[PhysicalSignatureModal] Physical signature upload failed:', err);
       setErrorMsg(`Submission failed: ${err.message}`);
     } finally {
       setIsSubmitting(false);

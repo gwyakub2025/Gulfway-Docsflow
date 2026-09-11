@@ -687,10 +687,16 @@ export function App() {
           document={physicalSignModalDoc.doc}
           pdfBase64={physicalSignModalDoc.pdfBase64}
           onSuccess={async (updatedDoc) => {
+            console.log('[App] Physical signature success callback received - transitioning to next step:', {
+              documentId: updatedDoc.id,
+              documentNumber: updatedDoc.documentNumber,
+              previousStatus: physicalSignModalDoc.doc.status,
+              newStatus: updatedDoc.status,
+              signaturesCount: updatedDoc.signatures?.length,
+              signedDocumentUrlPresent: !!updatedDoc.signedDocumentUrl,
+            });
             setPhysicalSignModalDoc(null);
-            if (activeDocumentDetails?.id === updatedDoc.id) {
-              setActiveDocumentDetails(updatedDoc);
-            }
+            setActiveDocumentDetails(updatedDoc);
             await refreshDocumentsAndStats();
           }}
           onClose={() => setPhysicalSignModalDoc(null)}
@@ -703,10 +709,15 @@ export function App() {
           document={digitalSignModalDoc}
           currentUser={currentUser}
           onSuccess={async (updatedDoc) => {
+            console.log('[App] Digital signature success callback received - transitioning to next step:', {
+              documentId: updatedDoc.id,
+              documentNumber: updatedDoc.documentNumber,
+              previousStatus: digitalSignModalDoc.status,
+              newStatus: updatedDoc.status,
+              signaturesCount: updatedDoc.signatures?.length,
+            });
             setDigitalSignModalDoc(null);
-            if (activeDocumentDetails?.id === updatedDoc.id) {
-              setActiveDocumentDetails(updatedDoc);
-            }
+            setActiveDocumentDetails(updatedDoc);
             await refreshDocumentsAndStats();
           }}
           onClose={() => setDigitalSignModalDoc(null)}

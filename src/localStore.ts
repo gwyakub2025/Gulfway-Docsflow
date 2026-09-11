@@ -10,7 +10,7 @@ import {
   FormField,
 } from './types/index.js';
 
-const STORAGE_KEY = 'gulfway_docflow_client_store_v3';
+const STORAGE_KEY = 'gulfway_docflow_client_store_v4_clean';
 
 interface StoreData {
   companies: Company[];
@@ -409,151 +409,9 @@ const DEFAULT_TEMPLATES: FormTemplate[] = [
   },
 ];
 
-const DEFAULT_DOCUMENTS: DocumentRecord[] = [
-  {
-    id: 'doc-seed-003',
-    documentNumber: 'GWDS-HR-LF-2026-001025',
-    secureVerificationToken: 'vt_seed_leave_001025_signed',
-    formTemplateId: 'form-leave',
-    formCode: 'LF',
-    formName: 'Annual & Emergency Leave Application Form',
-    formTemplateVersion: 1,
-    companyId: 'comp-gwds',
-    companyName: 'Gulf Way Delivery Services LLC',
-    departmentId: 'dept-hr',
-    employeeName: 'Mohammed Irfan',
-    employeeId: 'EMP-9022',
-    status: 'AWAITING_APPROVAL',
-    signingMethod: 'DIGITAL',
-    values: {
-      employee_name: 'Mohammed Irfan',
-      employee_id: 'EMP-9022',
-      department: 'Operations & Fleet Logistics',
-      leave_type: 'Annual Leave',
-      start_date: '2026-09-15',
-      end_date: '2026-09-30',
-      total_days: '15',
-      contact_number: '+971 52 987 6543',
-      emergency_contact: '+971 52 987 6543',
-      leave_reason: 'Scheduled annual vacation to home country with family.',
-      reason: 'Scheduled annual vacation to home country with family.',
-    },
-    generatedPdfUrl: '/api/documents/doc-seed-003/pdf',
-    signatures: [
-      {
-        id: 'sig-seed-003',
-        fieldId: 'signature',
-        signerName: 'Mohammed Irfan',
-        signerRole: 'Standard Employee / Rider',
-        signatureDataUrl: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="60"><path d="M10 40 Q 50 10 90 40 T 170 30" stroke="%231e3a8a" stroke-width="2.5" fill="none"/></svg>',
-        type: 'DRAWN',
-        signedAt: '2026-09-08T08:30:00.000Z',
-        userId: 'usr-rider-irfan',
-      },
-    ],
-    approvalHistory: [],
-    statusHistory: [
-      {
-        id: 'sh-c1',
-        previousStatus: 'DRAFT',
-        newStatus: 'NUMBER_ASSIGNED',
-        changedBy: 'usr-rider-irfan',
-        changedByName: 'Mohammed Irfan',
-        changedAt: '2026-09-08T08:00:00.000Z',
-        remarks: 'Official sequential registration number GWDS-HR-LF-2026-001025 allocated.',
-      },
-      {
-        id: 'sh-c2',
-        previousStatus: 'NUMBER_ASSIGNED',
-        newStatus: 'AWAITING_APPROVAL',
-        changedBy: 'usr-rider-irfan',
-        changedByName: 'Mohammed Irfan',
-        changedAt: '2026-09-08T08:30:00.000Z',
-        remarks: 'Digitally signed by applicant with cryptographic verification badge.',
-      },
-    ],
-    createdAt: '2026-09-08T08:00:00.000Z',
-    createdBy: 'usr-rider-irfan',
-    createdByName: 'Mohammed Irfan',
-    updatedAt: '2026-09-08T08:30:00.000Z',
-  },
-  {
-    id: 'doc-seed-002',
-    documentNumber: 'GWT-OPS-BHF-2026-000541',
-    secureVerificationToken: 'vt_seed_bike_000541_final',
-    formTemplateId: 'form-bike-handover',
-    formCode: 'BHF',
-    formName: 'Fleet Bike & Asset Handover Form',
-    formTemplateVersion: 1,
-    companyId: 'comp-gwt',
-    companyName: 'Gulf Way Transport LLC',
-    departmentId: 'dept-ops',
-    employeeName: 'Bilal Farooq',
-    employeeId: 'RDR-1102',
-    status: 'FINAL',
-    signingMethod: 'PHYSICAL',
-    finalPdfHashSha256: 'a4b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8',
-    finalizedAt: '2026-09-07T14:30:00.000Z',
-    values: {
-      rider_name: 'Bilal Farooq',
-      bike_plate: 'DXB-58291',
-      odometer_km: '14280',
-      fuel_card_no: 'E-PUMP-99482',
-      helmet_provided: true,
-      delivery_box_ok: true,
-    },
-    signatures: [],
-    approvalHistory: [],
-    statusHistory: [
-      {
-        id: 'sh-b1',
-        previousStatus: 'NUMBER_ASSIGNED',
-        newStatus: 'FINAL',
-        changedBy: 'usr-ops-tariq',
-        changedByName: 'Tariq Mansoor',
-        changedAt: '2026-09-07T14:30:00.000Z',
-        remarks: 'Physical wet-ink scan uploaded, verified, and locked with SHA-256 seal.',
-      },
-    ],
-    createdAt: '2026-09-07T10:00:00.000Z',
-    createdBy: 'usr-ops-tariq',
-    createdByName: 'Tariq Mansoor',
-    updatedAt: '2026-09-07T14:30:00.000Z',
-  },
-];
+const DEFAULT_DOCUMENTS: DocumentRecord[] = [];
 
-const DEFAULT_AUDIT_LOGS: AuditLog[] = [
-  {
-    id: 'log-001',
-    timestamp: '2026-09-08T08:30:00.000Z',
-    userId: 'usr-rider-irfan',
-    userName: 'Mohammed Irfan',
-    action: 'Document Digitally Signed',
-    resourceType: 'DOCUMENT',
-    resourceId: 'doc-seed-003',
-    remarks: 'Signature captured and embedded into official PDF template.',
-  },
-  {
-    id: 'log-002',
-    timestamp: '2026-09-08T08:00:00.000Z',
-    userId: 'usr-rider-irfan',
-    userName: 'Mohammed Irfan',
-    action: 'Document Number Allocated',
-    resourceType: 'DOCUMENT',
-    resourceId: 'doc-seed-003',
-    remarks: 'Allocated GWDS-HR-LF-2026-001025',
-  },
-  {
-    id: 'log-003',
-    timestamp: '2026-09-07T14:30:00.000Z',
-    userId: 'usr-ops-tariq',
-    userName: 'Tariq Mansoor',
-    action: 'Document Finalized & Sealed',
-    resourceType: 'DOCUMENT',
-    resourceId: 'doc-seed-002',
-    remarks: 'SHA256 seal: a4b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8',
-  },
-];
+const DEFAULT_AUDIT_LOGS: AuditLog[] = [];
 
 class ClientLocalStorageStore {
   private data: StoreData;
@@ -575,8 +433,8 @@ class ClientLocalStorageStore {
             users: Array.isArray(parsed.users) ? parsed.users : [...DEFAULT_USERS],
             numberingRules: Array.isArray(parsed.numberingRules) ? parsed.numberingRules : [...DEFAULT_RULES],
             formTemplates: Array.isArray(parsed.formTemplates) ? parsed.formTemplates : [...DEFAULT_TEMPLATES],
-            documents: Array.isArray(parsed.documents) ? parsed.documents : [...DEFAULT_DOCUMENTS],
-            auditLogs: Array.isArray(parsed.auditLogs) ? parsed.auditLogs : [...DEFAULT_AUDIT_LOGS],
+            documents: Array.isArray(parsed.documents) ? parsed.documents.filter((d: any) => !d.id?.startsWith('doc-seed-')) : [...DEFAULT_DOCUMENTS],
+            auditLogs: Array.isArray(parsed.auditLogs) ? parsed.auditLogs.filter((l: any) => !l.id?.startsWith('log-00')) : [...DEFAULT_AUDIT_LOGS],
             currentUserId: parsed.currentUserId || 'usr-admin',
           };
         }

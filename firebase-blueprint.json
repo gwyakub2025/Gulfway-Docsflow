@@ -1,0 +1,51 @@
+{
+  "entities": {
+    "DocumentRecord": {
+      "title": "DocumentRecord",
+      "description": "Official company documents with sequential serial numbers and signatures",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "documentNumber": { "type": "string", "maxLength": 128 },
+        "formTemplateId": { "type": "string", "maxLength": 128 },
+        "formName": { "type": "string", "maxLength": 200 },
+        "companyId": { "type": "string", "maxLength": 128 },
+        "companyName": { "type": "string", "maxLength": 200 },
+        "departmentId": { "type": "string", "maxLength": 128 },
+        "status": { "type": "string", "enum": ["DRAFT", "NUMBER_ASSIGNED", "AWAITING_SIGNATURE", "AWAITING_APPROVAL", "APPROVED", "REJECTED", "FINAL", "VOID"] },
+        "employeeName": { "type": "string", "maxLength": 200 },
+        "employeeId": { "type": "string", "maxLength": 64 },
+        "signingMethod": { "type": "string", "enum": ["DIGITAL", "PHYSICAL", "NONE"] },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "createdBy": { "type": "string", "maxLength": 128 }
+      },
+      "required": ["id", "formTemplateId", "companyId", "status", "createdAt", "updatedAt"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Cryptographic and lifecycle compliance audit trail entry",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "timestamp": { "type": "string" },
+        "userId": { "type": "string", "maxLength": 128 },
+        "userName": { "type": "string", "maxLength": 200 },
+        "action": { "type": "string", "maxLength": 150 },
+        "resourceType": { "type": "string", "maxLength": 50 },
+        "resourceId": { "type": "string", "maxLength": 128 }
+      },
+      "required": ["id", "timestamp", "userId", "userName", "action", "resourceType", "resourceId"]
+    }
+  },
+  "firestore": {
+    "/documents/{documentId}": {
+      "schema": "DocumentRecord",
+      "description": "Collection of all documents"
+    },
+    "/auditLogs/{logId}": {
+      "schema": "AuditLog",
+      "description": "Collection of system and document audit logs"
+    }
+  }
+}

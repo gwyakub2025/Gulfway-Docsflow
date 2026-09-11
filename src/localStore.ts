@@ -1167,7 +1167,7 @@ class ClientLocalStorageStore {
     const user = this.getCurrentUser();
     const doc = this.getDocument(id);
 
-    doc.signatures.push({
+    const sigEntry = {
       id: `sig-${Date.now()}`,
       fieldId,
       signerName: user.fullName,
@@ -1176,7 +1176,14 @@ class ClientLocalStorageStore {
       type,
       signedAt: new Date().toISOString(),
       userId: user.id,
-    });
+    };
+
+    const existingIndex = doc.signatures.findIndex((s) => s.fieldId === fieldId);
+    if (existingIndex >= 0) {
+      doc.signatures[existingIndex] = sigEntry;
+    } else {
+      doc.signatures.push(sigEntry);
+    }
 
     const oldStatus = doc.status;
     doc.status = 'AWAITING_APPROVAL';

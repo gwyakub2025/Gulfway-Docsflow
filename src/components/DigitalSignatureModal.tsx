@@ -7,8 +7,9 @@ import {
   Shield,
   Clock,
   UserCheck,
+  FileCheck2,
 } from 'lucide-react';
-import { DocumentRecord, User } from '../types/index.js';
+import { DocumentRecord, User, FormField } from '../types/index.js';
 import { api } from '../api.js';
 
 interface DigitalSignatureModalProps {
@@ -33,6 +34,67 @@ export const DigitalSignatureModal: React.FC<DigitalSignatureModalProps> = ({
   const [errorMsg, setErrorMsg] = useState('');
   const [penColor, setPenColor] = useState('#1e3a8a'); // Gulf Blue
   const [penSize, setPenSize] = useState(2.5);
+
+  // Dynamic template signature slots detection
+  const [availableSlots, setAvailableSlots] = useState<Array<{ id: string; label: string; role?: string }>>([]);
+  const [selectedSlotId, setSelectedSlotId] = useState<string>('fld-emp-sig');
+
+  useEffect(() => {
+    let isMounted = true;
+    async function loadTemplateSignatureSlots() {
+      try {
+        if (document.formTemplateId) {
+          const form = await api.getForm(document.formTemplateId);
+          if (isMounted && form && form.fields) {
+            const sigs = form.fields
+              .filter((f: FormField) => f.type === 'signature')
+              .map((f: FormField) => ({
+                id: f.id,
+                label: f.label || 'Signature',
+                role: f.signerRole,
+              }));
+
+            if (sigs.length > 0) {
+              setAvailableSlots(sigs);
+
+              // Smart default selection:
+              // If user is Approver, or applicant slot is already signed, default to approver slot
+              const hasApplicantSigned = (document.signatures || []).some(
+                (s) => s.fieldId === sigs[0].id || !s.fieldId.includes('hr')
+              );
+              const isApproverUser =
+                currentUser?.roleName === 'APPROVER' ||
+                currentUser?.roleName === 'ADMIN' ||
+                currentUser?.roleName === 'SUPER_ADMIN';
+
+              if (isApproverUser && sigs.length > 1 && hasApplicantSigned) {
+                setSelectedSlotId(sigs[1].id);
+              } else {
+                setSelectedSlotId(sigs[0].id);
+              }
+              return;
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Could not load form template signature slots, using standard defaults:', err);
+      }
+
+      // Default fallback slots
+      if (isMounted) {
+        setAvailableSlots([
+          { id: 'fld-emp-sig', label: 'Applicant Signature', role: 'USER' },
+          { id: 'fld-hr-sig', label: 'HR / Manager Verification', role: 'APPROVER' },
+        ]);
+        setSelectedSlotId('fld-emp-sig');
+      }
+    }
+
+    loadTemplateSignatureSlots();
+    return () => {
+      isMounted = false;
+    };
+  }, [document.formTemplateId, document.signatures, currentUser?.roleName]);
 
   // Initialize Canvas
   useEffect(() => {
@@ -127,7 +189,7 @@ export const DigitalSignatureModal: React.FC<DigitalSignatureModalProps> = ({
     try {
       const res = await api.applyDigitalSignature(
         document.id,
-        'sig_applicant',
+        selectedSlotId || 'fld-emp-sig',
         finalSignatureUrl,
         activeTab === 'DRAW' ? 'DRAWN' : 'UPLOADED'
       );
@@ -141,10 +203,11 @@ export const DigitalSignatureModal: React.FC<DigitalSignatureModalProps> = ({
   };
 
   const nowFormatted = new Date().toLocaleString('en-GB', { timeZone: 'Asia/Dubai' });
+  const selectedSlot = availableSlots.find((s) => s.id === selectedSlotId);
 
   return (
     <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 space-y-5 animate-in fade-in zoom-in-95 duration-150">
+      <div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 space-y-5 animate-in fade-in zoom-in-95 duration-150 max-h-[92vh] overflow-y-auto">
         <div className="flex items-center justify-between pb-3 border-b border-slate-100">
           <div>
             <div className="flex items-center gap-2">
@@ -159,7 +222,7 @@ export const DigitalSignatureModal: React.FC<DigitalSignatureModalProps> = ({
               Apply Cryptographically Bound Digital Signature
             </h3>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 font-bold">
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 font-bold p-1">
             ✕
           </button>
         </div>
@@ -167,6 +230,48 @@ export const DigitalSignatureModal: React.FC<DigitalSignatureModalProps> = ({
         {errorMsg && (
           <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-700 font-medium">
             {errorMsg}
+          </div>
+        )}
+
+        {/* Signature Slot Selector */}
+        {availableSlots.length > 0 && (
+          <div className="space-y-1.5 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+            <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+              <FileCheck2 className="w-4 h-4 text-indigo-600" />
+              <span>Target Signature Slot in Document</span>
+            </label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+              {availableSlots.map((slot) => {
+                const isSignedAlready = (document.signatures || []).some((s) => s.fieldId === slot.id);
+                const isSelected = selectedSlotId === slot.id;
+                return (
+                  <button
+                    key={slot.id}
+                    type="button"
+                    onClick={() => setSelectedSlotId(slot.id)}
+                    className={`p-2.5 rounded-lg border text-left text-xs transition-all flex items-center justify-between cursor-pointer ${
+                      isSelected
+                        ? 'border-indigo-600 bg-indigo-50 text-indigo-900 font-bold shadow-2xs ring-1 ring-indigo-500'
+                        : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
+                    }`}
+                  >
+                    <div>
+                      <div className="font-semibold text-slate-800">{slot.label}</div>
+                      <div className="text-[10px] text-slate-500">{slot.role || 'Signatory Slot'}</div>
+                    </div>
+                    {isSignedAlready ? (
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 shrink-0">
+                        Signed ✓
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 shrink-0">
+                        Open
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         )}
 
@@ -291,6 +396,10 @@ export const DigitalSignatureModal: React.FC<DigitalSignatureModalProps> = ({
             <span className="font-semibold text-slate-800">{currentUser?.fullName} ({currentUser?.roleName})</span>
           </div>
           <div className="flex justify-between">
+            <span className="text-slate-500">Target Signature Slot:</span>
+            <span className="font-semibold text-indigo-700">{selectedSlot?.label || selectedSlotId}</span>
+          </div>
+          <div className="flex justify-between">
             <span className="text-slate-500">Document Number:</span>
             <span className="font-mono font-bold text-slate-800">{document.documentNumber}</span>
           </div>
@@ -303,14 +412,14 @@ export const DigitalSignatureModal: React.FC<DigitalSignatureModalProps> = ({
         <div className="pt-2 flex items-center justify-end gap-3">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 rounded-lg"
+            className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 rounded-lg cursor-pointer"
           >
             Cancel
           </button>
           <button
             onClick={handleApplySignature}
             disabled={isSubmitting || !hasDrawn}
-            className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white rounded-lg text-xs font-bold shadow-xs transition-colors flex items-center gap-2"
+            className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white rounded-lg text-xs font-bold shadow-xs transition-colors flex items-center gap-2 cursor-pointer disabled:cursor-not-allowed"
           >
             <Check className="w-4 h-4" />
             <span>{isSubmitting ? 'Embedding Signature...' : 'Apply Signature to Document'}</span>

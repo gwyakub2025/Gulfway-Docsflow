@@ -1091,9 +1091,27 @@ app.post('/api/documents/:id/digital-sign', async (req, res) => {
     return res.status(400).json({ error: 'Cannot sign a finalized or voided document' });
   }
 
+  const template = resolveTemplateForDocument(doc);
+  const company = store.companies.find((c) => c.id === doc.companyId) || store.companies[0];
+
+  // Smartly resolve field ID if generic alias was provided
+  let targetFieldId = fieldId;
+  if (template) {
+    const sigFields = template.fields.filter((f) => f.type === 'signature');
+    if (sigFields.length > 0) {
+      const exactMatch = sigFields.find((f) => f.id === fieldId || f.name === fieldId);
+      if (exactMatch) {
+        targetFieldId = exactMatch.id;
+      } else if (!fieldId || fieldId === 'signature' || fieldId === 'sig_applicant') {
+        const applicantSlot = sigFields.find((f) => f.signerRole === 'USER' || !f.name.includes('hr'));
+        targetFieldId = applicantSlot ? applicantSlot.id : sigFields[0].id;
+      }
+    }
+  }
+
   const sigEntry = {
     id: `sig-${Date.now()}`,
-    fieldId: fieldId || 'signature',
+    fieldId: targetFieldId || 'signature',
     signerName: user.fullName,
     signerRole: user.roleName,
     signatureDataUrl,
@@ -1103,14 +1121,21 @@ app.post('/api/documents/:id/digital-sign', async (req, res) => {
     ipAddress: req.ip || '127.0.0.1',
   };
 
-  doc.signatures.push(sigEntry);
+  // Replace existing signature for this field if re-signed, or add new
+  const existingSigIndex = doc.signatures.findIndex((s) => s.fieldId === targetFieldId);
+  if (existingSigIndex >= 0) {
+    doc.signatures[existingSigIndex] = sigEntry;
+  } else {
+    doc.signatures.push(sigEntry);
+  }
+
   const oldStatus = doc.status;
-  doc.status = 'SIGNED';
+  if (doc.status === 'DRAFT' || doc.status === 'NUMBER_ASSIGNED') {
+    doc.status = 'SIGNED';
+  }
   doc.updatedAt = new Date().toISOString();
 
   // Re-generate PDF with newly embedded signature
-  const template = resolveTemplateForDocument(doc);
-  const company = store.companies.find((c) => c.id === doc.companyId) || store.companies[0];
   if (template) {
     const updatedPdf = await PdfGenerationEngine.generateDocumentPdf({
       template,
@@ -1124,16 +1149,16 @@ app.post('/api/documents/:id/digital-sign', async (req, res) => {
   doc.statusHistory.push({
     id: `sh-${Date.now()}`,
     previousStatus: oldStatus,
-    newStatus: 'SIGNED',
+    newStatus: doc.status,
     changedBy: user.id,
     changedByName: user.fullName,
     changedAt: new Date().toISOString(),
-    remarks: `Digital signature captured for ${user.fullName} (${user.roleName})`,
+    remarks: `Digital signature captured for ${user.fullName} (${user.roleName}) on field ${targetFieldId}`,
   });
 
   store.recordAudit(user.id, user.fullName, 'Digital Signature Applied', 'DOCUMENT', doc.id, {
     newValue: `Signed by ${user.fullName}`,
-    remarks: `Signature captured on field: ${fieldId}`,
+    remarks: `Signature captured on field: ${targetFieldId}`,
     companyId: doc.companyId,
   });
 
@@ -1245,6 +1270,11 @@ app.post('/api/documents/:id/finalize', async (req, res) => {
 
   if (!template) return res.status(404).json({ error: 'Template not found' });
 
+  const oldStatus = doc.status;
+  doc.status = 'FINAL';
+  doc.finalizedAt = new Date().toISOString();
+  doc.updatedAt = new Date().toISOString();
+
   // Generate Final PDF with all stamps, signatures & QR
   const finalPdf = await PdfGenerationEngine.generateDocumentPdf({
     template,
@@ -1253,12 +1283,9 @@ app.post('/api/documents/:id/finalize', async (req, res) => {
     appUrl: getPublicBaseUrl(req),
   });
 
-  const oldStatus = doc.status;
-  doc.status = 'FINAL';
   doc.finalPdfUrl = finalPdf.pdfBase64;
   doc.finalPdfHashSha256 = finalPdf.sha256Hash;
-  doc.finalizedAt = new Date().toISOString();
-  doc.updatedAt = new Date().toISOString();
+  doc.generatedPdfUrl = `/api/documents/${doc.id}/pdf`;
 
   doc.statusHistory.push({
     id: `sh-${Date.now()}`,

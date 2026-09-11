@@ -219,9 +219,10 @@ export const DocumentDetails: React.FC<DocumentDetailsProps> = ({
 
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
   const verificationToken = document.secureVerificationToken || (document as any).verificationToken;
-  const pdfStreamUrl = `/api/documents/${document.id}/pdf?baseUrl=${encodeURIComponent(origin)}&t=${pdfRefreshKey}`;
-  const pdfDownloadUrl = `/api/documents/${document.id}/pdf?download=true&baseUrl=${encodeURIComponent(origin)}&t=${pdfRefreshKey}`;
-  const qrImageUrl = `/api/documents/${document.id}/qr-code/image?baseUrl=${encodeURIComponent(origin)}&t=${pdfRefreshKey}`;
+  const updateFingerprint = `${document.updatedAt || ''}_${(document.signatures || []).length}_${document.status}_${pdfRefreshKey}`;
+  const pdfStreamUrl = `/api/documents/${document.id}/pdf?baseUrl=${encodeURIComponent(origin)}&sigCount=${(document.signatures || []).length}&v=${encodeURIComponent(updateFingerprint)}`;
+  const pdfDownloadUrl = `/api/documents/${document.id}/pdf?download=true&baseUrl=${encodeURIComponent(origin)}&v=${encodeURIComponent(updateFingerprint)}`;
+  const qrImageUrl = `/api/documents/${document.id}/qr-code/image?baseUrl=${encodeURIComponent(origin)}&v=${encodeURIComponent(updateFingerprint)}`;
   const publicVerifyUrl = `${origin}/verify/${verificationToken || ''}`;
 
   const historyList = document.statusHistory || (document as any).history || [];

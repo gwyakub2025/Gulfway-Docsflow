@@ -65,28 +65,139 @@ export class PdfGenerationEngine {
 
     // Embed company stamp if present
     let stampImageEmbed = null;
-    if (company.stampUrl && company.stampUrl.startsWith('data:image/png;base64,')) {
-      try {
-        const stampBuffer = Buffer.from(company.stampUrl.replace(/^data:image\/png;base64,/, ''), 'base64');
-        stampImageEmbed = await pdfDoc.embedPng(stampBuffer);
-      } catch {
-        // ignore
-      }
+    if (company.stampUrl) {
+      stampImageEmbed = await this.embedImageBuffer(pdfDoc, company.stampUrl);
     }
 
-    // Embed signatures if present
-    const signatureEmbeds: Record<string, any> = {};
+    // Embed signatures with robust multi-format and smart field matching
+    const signatureFields = template.fields.filter((f) => f.type === 'signature');
+    const embeddedSignatures: Array<{ sig: any; image: any }> = [];
+
     if (document.signatures && document.signatures.length > 0) {
       for (const sig of document.signatures) {
-        if (sig.signatureDataUrl && sig.signatureDataUrl.startsWith('data:image/png;base64,')) {
-          try {
-            const sigBuf = Buffer.from(sig.signatureDataUrl.replace(/^data:image\/png;base64,/, ''), 'base64');
-            signatureEmbeds[sig.fieldId] = await pdfDoc.embedPng(sigBuf);
-          } catch {
-            // ignore
+        if (sig.signatureDataUrl) {
+          const img = await this.embedImageBuffer(pdfDoc, sig.signatureDataUrl);
+          if (img) {
+            embeddedSignatures.push({ sig, image: img });
           }
         }
       }
+    }
+
+    // Map each template signature field to its resolved signature or official sanction seal
+    const fieldSignatureMap = new Map<
+      string,
+      {
+        image?: any;
+        sig?: any;
+        isApprovalSeal?: boolean;
+        approverName?: string;
+        approvalDate?: string;
+      }
+    >();
+
+    const usedSigIndexes = new Set<number>();
+
+    // 1. Exact Field ID Match
+    signatureFields.forEach((field) => {
+      const idx = embeddedSignatures.findIndex((item, i) => !usedSigIndexes.has(i) && item.sig.fieldId === field.id);
+      if (idx !== -1) {
+        usedSigIndexes.add(idx);
+        fieldSignatureMap.set(field.id, embeddedSignatures[idx]);
+      }
+    });
+
+    // 2. Exact Field Name Match
+    signatureFields.forEach((field) => {
+      if (fieldSignatureMap.has(field.id)) return;
+      const idx = embeddedSignatures.findIndex((item, i) => !usedSigIndexes.has(i) && item.sig.fieldId === field.name);
+      if (idx !== -1) {
+        usedSigIndexes.add(idx);
+        fieldSignatureMap.set(field.id, embeddedSignatures[idx]);
+      }
+    });
+
+    // 3. Semantic Role / Alias Matching (Applicant vs Approver)
+    signatureFields.forEach((field) => {
+      if (fieldSignatureMap.has(field.id)) return;
+      const isApproverField =
+        field.signerRole === 'APPROVER' ||
+        field.name.includes('hr') ||
+        field.name.includes('manager') ||
+        field.name.includes('fleet') ||
+        field.name.includes('finance') ||
+        field.label.toLowerCase().includes('hr') ||
+        field.label.toLowerCase().includes('manager') ||
+        field.label.toLowerCase().includes('verification') ||
+        field.label.toLowerCase().includes('sanction');
+
+      const idx = embeddedSignatures.findIndex((item, i) => {
+        if (usedSigIndexes.has(i)) return false;
+        const fid = (item.sig.fieldId || '').toLowerCase();
+        const role = (item.sig.signerRole || '').toLowerCase();
+        const isApproverSig =
+          fid.includes('approv') ||
+          fid.includes('hr') ||
+          fid.includes('manager') ||
+          fid.includes('fleet') ||
+          fid.includes('finance') ||
+          role.includes('approv') ||
+          role.includes('admin') ||
+          role.includes('manager');
+
+        return isApproverField ? isApproverSig : !isApproverSig;
+      });
+
+      if (idx !== -1) {
+        usedSigIndexes.add(idx);
+        fieldSignatureMap.set(field.id, embeddedSignatures[idx]);
+      }
+    });
+
+    // 4. Positional fallback for any remaining unused signatures
+    signatureFields.forEach((field) => {
+      if (fieldSignatureMap.has(field.id)) return;
+      const idx = embeddedSignatures.findIndex((_, i) => !usedSigIndexes.has(i));
+      if (idx !== -1) {
+        usedSigIndexes.add(idx);
+        fieldSignatureMap.set(field.id, embeddedSignatures[idx]);
+      }
+    });
+
+    // 5. Official Corporate Sanction & Approval Seal for Approved/Finalized Documents
+    const isApprovedOrFinal =
+      document.status === 'APPROVED' ||
+      document.status === 'FINAL' ||
+      !!document.finalizedAt ||
+      !isDraftPreview && (document.approvalHistory && document.approvalHistory.length > 0);
+
+    if (isApprovedOrFinal) {
+      signatureFields.forEach((field) => {
+        if (fieldSignatureMap.has(field.id)) return;
+        const isApproverSlot =
+          field.signerRole === 'APPROVER' ||
+          field.name.includes('hr') ||
+          field.name.includes('manager') ||
+          field.name.includes('fleet') ||
+          field.name.includes('finance') ||
+          field.label.toLowerCase().includes('hr') ||
+          field.label.toLowerCase().includes('manager') ||
+          field.label.toLowerCase().includes('verification') ||
+          field.label.toLowerCase().includes('sanction');
+
+        if (isApproverSlot) {
+          const approvalEntry = (document.approvalHistory || []).find((a: any) => a.action === 'APPROVED');
+          const statusEntry = (document.statusHistory || []).find((s: any) => s.newStatus === 'APPROVED' || s.newStatus === 'FINAL');
+          const approverName = approvalEntry?.approverName || (statusEntry as any)?.changedByName || 'HR Operations Director';
+          const approvalDate = approvalEntry?.actionAt || (statusEntry as any)?.changedAt || document.updatedAt || new Date().toISOString();
+
+          fieldSignatureMap.set(field.id, {
+            isApprovalSeal: true,
+            approverName,
+            approvalDate,
+          });
+        }
+      });
     }
 
     // Map each field to its coordinates
@@ -167,28 +278,128 @@ export class PdfGenerationEngine {
         }
 
         case 'signature': {
-          const sigImg = signatureEmbeds[field.id];
-          if (sigImg) {
-            page.drawImage(sigImg, {
+          const match = fieldSignatureMap.get(field.id);
+          const baselineY = yPos + 10;
+
+          if (match?.image) {
+            // Draw signature baseline
+            page.drawLine({
+              start: { x: xPos, y: baselineY },
+              end: { x: xPos + fieldWidth, y: baselineY },
+              thickness: 0.8,
+              color: rgb(0.55, 0.6, 0.65),
+            });
+
+            // Draw field label below baseline
+            page.drawText(field.label, {
               x: xPos,
-              y: yPos,
-              width: Math.max(fieldWidth, 90),
-              height: Math.max(fieldHeight, 35),
+              y: yPos - 3,
+              size: 8,
+              font: fontBold,
+              color: rgb(0.12, 0.18, 0.28),
+            });
+
+            // Draw embedded signature image directly above the baseline
+            const targetWidth = Math.min(fieldWidth - 10, 140);
+            const targetHeight = Math.min(fieldHeight, 38);
+            page.drawImage(match.image, {
+              x: xPos + 5,
+              y: baselineY + 2,
+              width: Math.max(targetWidth, 60),
+              height: Math.max(targetHeight, 25),
+            });
+
+            // Draw audit verification caption below field label
+            const signer = match.sig?.signerName || 'Authorized Signatory';
+            const dateStr = match.sig?.signedAt
+              ? new Date(match.sig.signedAt).toLocaleDateString('en-GB')
+              : (document.updatedAt ? new Date(document.updatedAt).toLocaleDateString('en-GB') : new Date().toLocaleDateString('en-GB'));
+
+            page.drawText(`Digitally Signed by: ${signer} | ${dateStr} (Verified)`, {
+              x: xPos,
+              y: yPos - 13,
+              size: 5.5,
+              font: fontRegular,
+              color: rgb(0.1, 0.45, 0.25),
+            });
+          } else if (match?.isApprovalSeal) {
+            // Draw official corporate sanction & verification seal block
+            const boxHeight = Math.max(fieldHeight + 14, 52);
+            const boxWidth = Math.max(fieldWidth, 140);
+
+            // Light emerald tint background box
+            page.drawRectangle({
+              x: xPos,
+              y: yPos - 10,
+              width: boxWidth,
+              height: boxHeight,
+              color: rgb(0.95, 0.98, 0.96),
+              borderColor: rgb(0.12, 0.55, 0.32),
+              borderWidth: 1,
+            });
+
+            // Top accent status bar
+            page.drawRectangle({
+              x: xPos,
+              y: yPos - 10 + boxHeight - 4,
+              width: boxWidth,
+              height: 4,
+              color: rgb(0.12, 0.55, 0.32),
+            });
+
+            // Seal Header
+            page.drawText('VERIFIED & SANCTIONED', {
+              x: xPos + 8,
+              y: yPos - 10 + boxHeight - 15,
+              size: 7,
+              font: fontBold,
+              color: rgb(0.1, 0.45, 0.25),
+            });
+
+            // Field Label / Approval Title
+            page.drawText(`${field.label}: Approved`, {
+              x: xPos + 8,
+              y: yPos - 10 + boxHeight - 26,
+              size: 6.5,
+              font: fontBold,
+              color: rgb(0.15, 0.2, 0.28),
+            });
+
+            // Signatory & Date
+            const approver = match.approverName || 'Authorized HR / Operations Director';
+            const dateStr = match.approvalDate
+              ? new Date(match.approvalDate).toLocaleDateString('en-GB')
+              : new Date().toLocaleDateString('en-GB');
+
+            page.drawText(`Signatory: ${approver}`, {
+              x: xPos + 8,
+              y: yPos - 10 + boxHeight - 37,
+              size: 6,
+              font: fontRegular,
+              color: rgb(0.25, 0.3, 0.38),
+            });
+
+            page.drawText(`Date: ${dateStr} | Status: Certified Final`, {
+              x: xPos + 8,
+              y: yPos - 10 + boxHeight - 47,
+              size: 5.5,
+              font: fontRegular,
+              color: rgb(0.35, 0.4, 0.48),
             });
           } else {
-            // Draw signature placeholder line
+            // Draw clean signature placeholder line
             page.drawLine({
-              start: { x: xPos, y: yPos + 5 },
-              end: { x: xPos + fieldWidth, y: yPos + 5 },
+              start: { x: xPos, y: baselineY },
+              end: { x: xPos + fieldWidth, y: baselineY },
               thickness: 1,
-              color: rgb(0.6, 0.65, 0.7),
+              color: rgb(0.65, 0.7, 0.75),
             });
             page.drawText(`${field.label} (Sign Here)`, {
               x: xPos,
-              y: yPos - 8,
-              size: 7,
+              y: yPos - 4,
+              size: 7.5,
               font: fontRegular,
-              color: rgb(0.4, 0.45, 0.5),
+              color: rgb(0.45, 0.5, 0.55),
             });
           }
           break;
@@ -441,5 +652,57 @@ export class PdfGenerationEngine {
     }
 
     return pdfDoc;
+  }
+
+  /**
+   * Safely embed any base64 image (PNG, JPEG, JPG, Data URL) into PDFDocument.
+   * Inspects binary signatures to dynamically select embedPng or embedJpg.
+   */
+  private static async embedImageBuffer(pdfDoc: PDFDocument, dataUrlOrBase64: string): Promise<any> {
+    try {
+      if (!dataUrlOrBase64 || typeof dataUrlOrBase64 !== 'string') return null;
+      const clean = dataUrlOrBase64.trim();
+      if (!clean) return null;
+
+      let buf: Buffer;
+
+      if (clean.startsWith('data:image/svg+xml')) {
+        return null;
+      } else if (clean.startsWith('data:image/png;base64,')) {
+        buf = Buffer.from(clean.replace(/^data:image\/png;base64,/, ''), 'base64');
+      } else if (clean.startsWith('data:image/jpeg;base64,') || clean.startsWith('data:image/jpg;base64,')) {
+        buf = Buffer.from(clean.replace(/^data:image\/(jpeg|jpg);base64,/, ''), 'base64');
+      } else if (clean.startsWith('data:')) {
+        const base64Index = clean.indexOf(';base64,');
+        if (base64Index !== -1) {
+          buf = Buffer.from(clean.substring(base64Index + 8), 'base64');
+        } else {
+          buf = Buffer.from(clean, 'base64');
+        }
+      } else {
+        buf = Buffer.from(clean, 'base64');
+      }
+
+      if (!buf || buf.length === 0) return null;
+
+      // Check binary magic bytes:
+      // PNG: 0x89 0x50 0x4E 0x47
+      // JPEG: 0xFF 0xD8
+      if (buf.length >= 4 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) {
+        return await pdfDoc.embedPng(buf);
+      } else if (buf.length >= 2 && buf[0] === 0xff && buf[1] === 0xd8) {
+        return await pdfDoc.embedJpg(buf);
+      } else {
+        // Fallback: try PNG first, then JPG
+        try {
+          return await pdfDoc.embedPng(buf);
+        } catch {
+          return await pdfDoc.embedJpg(buf);
+        }
+      }
+    } catch (err: any) {
+      console.warn('[pdfEngine] Failed to embed image:', err?.message || err);
+      return null;
+    }
   }
 }

@@ -117,35 +117,62 @@ export class PdfGenerationEngine {
       }
     });
 
-    // 3. Semantic Role / Alias Matching (Applicant vs Approver)
+    // 3. Semantic Role / Alias Matching across 4 Tiers (Employee, Employer, Finance, Approver)
     signatureFields.forEach((field) => {
       if (fieldSignatureMap.has(field.id)) return;
+      const fidLower = field.id.toLowerCase();
+      const fnameLower = (field.name || '').toLowerCase();
+      const flabelLower = (field.label || '').toLowerCase();
+
+      const isFinanceField =
+        field.signerRole === 'FINANCE' ||
+        fidLower.includes('finance') ||
+        fnameLower.includes('finance') ||
+        flabelLower.includes('finance') ||
+        fnameLower.includes('account');
+
+      const isEmployerField =
+        field.signerRole === 'EMPLOYER' ||
+        fidLower.includes('employer') ||
+        fnameLower.includes('employer') ||
+        flabelLower.includes('employer') ||
+        fnameLower.includes('supervisor') ||
+        flabelLower.includes('supervisor') ||
+        fidLower.includes('bhf-m');
+
       const isApproverField =
         field.signerRole === 'APPROVER' ||
-        field.name.includes('hr') ||
-        field.name.includes('manager') ||
-        field.name.includes('fleet') ||
-        field.name.includes('finance') ||
-        field.label.toLowerCase().includes('hr') ||
-        field.label.toLowerCase().includes('manager') ||
-        field.label.toLowerCase().includes('verification') ||
-        field.label.toLowerCase().includes('sanction');
+        fidLower.includes('approv') ||
+        fnameLower.includes('approv') ||
+        flabelLower.includes('approv') ||
+        fnameLower.includes('hr') ||
+        flabelLower.includes('hr') ||
+        flabelLower.includes('sanction');
 
       const idx = embeddedSignatures.findIndex((item, i) => {
         if (usedSigIndexes.has(i)) return false;
-        const fid = (item.sig.fieldId || '').toLowerCase();
-        const role = (item.sig.signerRole || '').toLowerCase();
-        const isApproverSig =
-          fid.includes('approv') ||
-          fid.includes('hr') ||
-          fid.includes('manager') ||
-          fid.includes('fleet') ||
-          fid.includes('finance') ||
-          role.includes('approv') ||
-          role.includes('admin') ||
-          role.includes('manager');
+        const sigFid = (item.sig.fieldId || '').toLowerCase();
+        const sigRole = (item.sig.signerRole || '').toLowerCase();
 
-        return isApproverField ? isApproverSig : !isApproverSig;
+        if (isFinanceField) {
+          return sigFid.includes('finance') || sigRole.includes('finance') || sigRole.includes('account');
+        }
+        if (isEmployerField) {
+          return sigFid.includes('employer') || sigFid.includes('supervisor') || sigRole.includes('employer') || sigRole.includes('manager');
+        }
+        if (isApproverField) {
+          return sigFid.includes('approv') || sigFid.includes('hr') || sigRole.includes('approv') || sigRole.includes('admin') || sigRole.includes('director');
+        }
+        // Otherwise assume employee / applicant field
+        return (
+          sigFid.includes('emp') ||
+          sigFid.includes('applicant') ||
+          sigFid.includes('rider') ||
+          sigFid.includes('sig1') ||
+          sigRole.includes('user') ||
+          sigRole.includes('employee') ||
+          sigRole.includes('staff')
+        );
       });
 
       if (idx !== -1) {
@@ -469,6 +496,96 @@ export class PdfGenerationEngine {
           break;
         }
       }
+    }
+
+    // 6. Guarantee that ANY signatures captured that did not have explicit template coordinates are fully rendered
+    const unrenderedSignatures = embeddedSignatures.filter((_, idx) => !usedSigIndexes.has(idx));
+    if (unrenderedSignatures.length > 0) {
+      const execPage = pages[pages.length - 1];
+      const { width: pW } = execPage.getSize();
+      const panelX = 30;
+      const panelY = 32;
+      const panelWidth = pW - 60;
+      const panelHeight = 52;
+
+      // Executive multi-signatory container box
+      execPage.drawRectangle({
+        x: panelX,
+        y: panelY,
+        width: panelWidth,
+        height: panelHeight,
+        color: rgb(0.98, 0.985, 0.995),
+        borderColor: rgb(0.8, 0.85, 0.92),
+        borderWidth: 0.75,
+      });
+
+      // Top title bar
+      execPage.drawRectangle({
+        x: panelX,
+        y: panelY + panelHeight - 13,
+        width: panelWidth,
+        height: 13,
+        color: rgb(0.1, 0.22, 0.42),
+      });
+
+      execPage.drawText('OFFICIAL MULTI-SIGNATORY VERIFICATION & SANCTION RECORD', {
+        x: panelX + 8,
+        y: panelY + panelHeight - 9.5,
+        size: 6.5,
+        font: fontBold,
+        color: rgb(1, 1, 1),
+      });
+
+      const colWidth = panelWidth / unrenderedSignatures.length;
+      unrenderedSignatures.forEach((item, colIdx) => {
+        const colX = panelX + colIdx * colWidth;
+        const colContentX = colX + 8;
+
+        if (colIdx > 0) {
+          execPage.drawLine({
+            start: { x: colX, y: panelY },
+            end: { x: colX, y: panelY + panelHeight - 13 },
+            thickness: 0.5,
+            color: rgb(0.85, 0.88, 0.92),
+          });
+        }
+
+        const roleLabel = (item.sig.signerRole || 'Authorized Signatory').toUpperCase();
+        execPage.drawText(roleLabel.slice(0, 32), {
+          x: colContentX,
+          y: panelY + panelHeight - 22,
+          size: 6,
+          font: fontBold,
+          color: rgb(0.15, 0.28, 0.5),
+        });
+
+        if (item.image) {
+          try {
+            const sigImgWidth = Math.min(colWidth - 20, 75);
+            const sigImgHeight = 18;
+            execPage.drawImage(item.image, {
+              x: colContentX,
+              y: panelY + 11,
+              width: sigImgWidth,
+              height: sigImgHeight,
+            });
+          } catch (err) {
+            // fallback text
+          }
+        }
+
+        const dateStr = item.sig.signedAt
+          ? new Date(item.sig.signedAt).toLocaleDateString('en-GB') + ' ' + new Date(item.sig.signedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+          : 'Verified';
+
+        execPage.drawText(`${item.sig.signerName || 'Authorized Officer'} | ${dateStr} (GST)`, {
+          x: colContentX,
+          y: panelY + 3.5,
+          size: 5,
+          font: fontRegular,
+          color: rgb(0.3, 0.35, 0.4),
+        });
+      });
     }
 
     // Add security header / footer banner to every page

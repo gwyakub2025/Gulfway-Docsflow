@@ -460,7 +460,13 @@ export const api = {
 
   async updateDocument(
     id: string,
-    data: { values?: Record<string, any>; employeeName?: string; employeeId?: string }
+    data: {
+      values?: Record<string, any>;
+      employeeName?: string;
+      employeeId?: string;
+      signedDocumentUrl?: string | null;
+      status?: any;
+    }
   ): Promise<{
     success: boolean;
     document: DocumentRecord;
@@ -521,16 +527,43 @@ export const api = {
     id: string,
     fieldId: string,
     signatureDataUrl: string,
-    type: 'DRAWN' | 'UPLOADED' | 'THUMBPRINT'
+    type: 'DRAWN' | 'UPLOADED' | 'THUMBPRINT',
+    signerName?: string,
+    signerRole?: string
   ): Promise<{ success: boolean; document: DocumentRecord }> {
     const res = await safeFetch(
       `/api/documents/${id}/digital-sign`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fieldId, signatureDataUrl, type }),
+        body: JSON.stringify({ fieldId, signatureDataUrl, type, signerName, signerRole }),
       },
-      () => clientStore.applyDigitalSignature(id, fieldId, signatureDataUrl, type)
+      () => clientStore.applyDigitalSignature(id, fieldId, signatureDataUrl, type, signerName, signerRole)
+    );
+    if (res.document) {
+      saveDocumentToFirestore(res.document).catch(() => {});
+    }
+    return res;
+  },
+
+  async applyMultipleDigitalSignatures(
+    id: string,
+    signatures: Array<{
+      fieldId: string;
+      signatureDataUrl: string;
+      type: 'DRAWN' | 'UPLOADED' | 'THUMBPRINT';
+      signerName?: string;
+      signerRole?: string;
+    }>
+  ): Promise<{ success: boolean; document: DocumentRecord }> {
+    const res = await safeFetch(
+      `/api/documents/${id}/digital-sign`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ signatures }),
+      },
+      () => clientStore.applyMultipleDigitalSignatures(id, signatures)
     );
     if (res.document) {
       saveDocumentToFirestore(res.document).catch(() => {});
@@ -606,6 +639,64 @@ export const api = {
     );
     deleteDocumentFromFirestore(id).catch(() => {});
     return res;
+  },
+
+  /**
+   * Explicitly synchronizes a document record from browser/Firestore to backend server.
+   * Ensures the server's in-memory and disk registries have the document record immediately.
+   */
+  async syncDocumentToServer(doc: DocumentRecord): Promise<DocumentRecord> {
+    if (!doc || !doc.id) return doc;
+    try {
+      const res = await fetch('/api/documents/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ document: doc }),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        return json.document || doc;
+      }
+    } catch (e) {
+      console.warn('[DocFlow API] Failed to sync document to server:', e);
+    }
+    return doc;
+  },
+
+  /**
+   * Directly requests PDF generation by passing the document payload.
+   * Returns base64 or array buffer without depending on server registry lookup.
+   */
+  async renderDocumentPdf(doc: DocumentRecord): Promise<{ pdfBase64: string; pdfBytes?: Uint8Array }> {
+    const res = await fetch('/api/documents/render-pdf', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json, application/pdf',
+      },
+      body: JSON.stringify({ document: doc }),
+    });
+
+    if (!res.ok) {
+      throw new Error(`Failed to render PDF (${res.status})`);
+    }
+
+    const contentType = res.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      const json = await res.json();
+      return { pdfBase64: json.pdfBase64 };
+    }
+
+    const arrayBuffer = await res.arrayBuffer();
+    const bytes = new Uint8Array(arrayBuffer);
+    let binary = '';
+    for (let i = 0; i < bytes.byteLength; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return {
+      pdfBase64: btoa(binary),
+      pdfBytes: bytes,
+    };
   },
 
   // Public Verification

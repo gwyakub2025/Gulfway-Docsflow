@@ -311,6 +311,8 @@ const DEFAULT_TEMPLATES: FormTemplate[] = [
       makeField({ id: 'fld-days', name: 'total_days', label: 'Total Days', type: 'number', pageNumber: 1, x: 8, y: 46, width: 40, height: 3.5, required: true }),
       makeField({ id: 'fld-contact', name: 'contact_number', label: 'Contact Number During Leave', type: 'text', pageNumber: 1, x: 52, y: 46, width: 40, height: 3.5, required: true }),
       makeField({ id: 'fld-reason', name: 'leave_reason', label: 'Leave Reason / Justification', type: 'textarea', pageNumber: 1, x: 8, y: 52, width: 84, height: 6, required: true }),
+      makeField({ id: 'fld-emp-sig', name: 'employee_signature', label: 'Applicant Signature', type: 'signature', pageNumber: 1, x: 8, y: 73, width: 38, height: 8, required: true, signerRole: 'USER' }),
+      makeField({ id: 'fld-hr-sig', name: 'hr_signature', label: 'HR / Manager Verification', type: 'signature', pageNumber: 1, x: 54, y: 73, width: 38, height: 8, required: true, signerRole: 'APPROVER' }),
     ],
     createdAt: '2026-01-10T00:00:00.000Z',
     updatedAt: '2026-01-10T00:00:00.000Z',
@@ -340,6 +342,8 @@ const DEFAULT_TEMPLATES: FormTemplate[] = [
       makeField({ id: 'fld-fuel-card', name: 'fuel_card_no', label: 'E-Fuel Card Number', type: 'text', pageNumber: 1, x: 52, y: 34, width: 40, height: 3.5, required: true }),
       makeField({ id: 'fld-helmet', name: 'helmet_provided', label: 'Safety Helmet Issued', type: 'checkbox', pageNumber: 1, x: 8, y: 40, width: 20, height: 3.5, required: false }),
       makeField({ id: 'fld-box', name: 'delivery_box_ok', label: 'Delivery Box Inspected', type: 'checkbox', pageNumber: 1, x: 30, y: 40, width: 20, height: 3.5, required: false }),
+      makeField({ id: 'fld-bhf-r-sig', name: 'rider_signature', label: 'Rider Custody Acceptance Signature', type: 'signature', pageNumber: 1, x: 8, y: 73, width: 38, height: 8, required: true, signerRole: 'USER' }),
+      makeField({ id: 'fld-bhf-m-sig', name: 'fleet_officer_signature', label: 'Fleet Officer Handover Signature', type: 'signature', pageNumber: 1, x: 54, y: 73, width: 38, height: 8, required: true, signerRole: 'APPROVER' }),
     ],
     createdAt: '2026-01-15T00:00:00.000Z',
     updatedAt: '2026-01-15T00:00:00.000Z',
@@ -367,6 +371,8 @@ const DEFAULT_TEMPLATES: FormTemplate[] = [
       makeField({ id: 'fld-amount', name: 'requested_amount', label: 'Advance Amount (AED)', type: 'number', pageNumber: 1, x: 52, y: 28, width: 40, height: 3.5, required: true }),
       makeField({ id: 'fld-installments', name: 'deduction_installments', label: 'Deduction Installments (Months)', type: 'dropdown', pageNumber: 1, x: 8, y: 34, width: 40, height: 3.5, options: ['1 Month', '2 Months', '3 Months'], required: true }),
       makeField({ id: 'fld-saf-reason', name: 'reason', label: 'Reason for Emergency Advance', type: 'textarea', pageNumber: 1, x: 8, y: 40, width: 84, height: 6, required: true }),
+      makeField({ id: 'fld-saf-sig1', name: 'employee_signature', label: 'Employee Undertaking Signature', type: 'signature', pageNumber: 1, x: 8, y: 73, width: 38, height: 8, required: true, signerRole: 'USER' }),
+      makeField({ id: 'fld-saf-sig2', name: 'finance_head_signature', label: 'Finance Director Sanction Signature', type: 'signature', pageNumber: 1, x: 54, y: 73, width: 38, height: 8, required: true, signerRole: 'APPROVER' }),
     ],
     createdAt: '2026-02-01T00:00:00.000Z',
     updatedAt: '2026-02-01T00:00:00.000Z',
@@ -955,7 +961,7 @@ class ClientLocalStorageStore {
     return draftDoc;
   }
 
-  public updateDocument(id: string, data: { values?: Record<string, any>; employeeName?: string; employeeId?: string }) {
+  public updateDocument(id: string, data: { values?: Record<string, any>; employeeName?: string; employeeId?: string; signedDocumentUrl?: string | null; status?: any }) {
     const user = this.getCurrentUser();
     const doc = this.getDocument(id);
 
@@ -968,6 +974,12 @@ class ClientLocalStorageStore {
     }
     if (data.employeeName) doc.employeeName = data.employeeName;
     if (data.employeeId) doc.employeeId = data.employeeId;
+    if (data.signedDocumentUrl !== undefined) {
+      doc.signedDocumentUrl = data.signedDocumentUrl as any;
+    }
+    if (data.status) {
+      doc.status = data.status;
+    }
     doc.updatedAt = new Date().toISOString();
 
     doc.statusHistory.push({
@@ -1044,24 +1056,22 @@ class ClientLocalStorageStore {
     return { success: true, document: doc, pdfBase64: '' };
   }
 
-  public applyDigitalSignature(id: string, fieldId: string, signatureDataUrl: string, type: 'DRAWN' | 'UPLOADED' | 'THUMBPRINT') {
+  public applyDigitalSignature(
+    id: string,
+    fieldId: string,
+    signatureDataUrl: string,
+    type: 'DRAWN' | 'UPLOADED' | 'THUMBPRINT',
+    signerName?: string,
+    signerRole?: string
+  ) {
     const user = this.getCurrentUser();
     const doc = this.getDocument(id);
 
-    console.log('[localStore] applyDigitalSignature (BEFORE STORE UPDATE):', {
-      documentId: id,
-      fieldId,
-      type,
-      signatureDataUrlLength: signatureDataUrl?.length,
-      currentDocStatus: doc.status,
-      user: user.fullName,
-    });
-
     const sigEntry = {
-      id: `sig-${Date.now()}`,
+      id: `sig-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       fieldId,
-      signerName: user.fullName,
-      signerRole: user.roleName,
+      signerName: signerName || user.fullName,
+      signerRole: signerRole || user.roleName,
       signatureDataUrl,
       type,
       signedAt: new Date().toISOString(),
@@ -1076,28 +1086,89 @@ class ClientLocalStorageStore {
     }
 
     const oldStatus = doc.status;
-    doc.status = 'AWAITING_APPROVAL';
+    if (
+      doc.status === 'DRAFT' ||
+      doc.status === 'NUMBER_ASSIGNED' ||
+      doc.status === 'AWAITING_SIGNATURE' ||
+      doc.status === 'SIGNED'
+    ) {
+      doc.status = 'AWAITING_APPROVAL';
+    }
     doc.updatedAt = new Date().toISOString();
 
     doc.statusHistory.push({
       id: `sh-${Date.now()}`,
       previousStatus: oldStatus,
-      newStatus: 'AWAITING_APPROVAL',
+      newStatus: doc.status,
       changedBy: user.id,
       changedByName: user.fullName,
       changedAt: new Date().toISOString(),
-      remarks: `Digitally signed by ${user.fullName} (${type}). Pending supervisor approval.`,
+      remarks: `Digitally signed slot [${fieldId}] by ${sigEntry.signerName} (${type}).`,
     });
 
-    this.recordAudit(user.id, user.fullName, 'Document Digitally Signed', 'DOCUMENT', doc.id, `Signed by ${user.fullName}`);
+    this.recordAudit(user.id, user.fullName, 'Document Digitally Signed', 'DOCUMENT', doc.id, `Slot ${fieldId} signed by ${sigEntry.signerName}`);
     this.saveToStorage();
 
-    console.log('[localStore] applyDigitalSignature (AFTER STORE UPDATE):', {
-      documentId: doc.id,
-      oldStatus,
+    return { success: true, document: doc };
+  }
+
+  public applyMultipleDigitalSignatures(
+    id: string,
+    signatures: Array<{
+      fieldId: string;
+      signatureDataUrl: string;
+      type: 'DRAWN' | 'UPLOADED' | 'THUMBPRINT';
+      signerName?: string;
+      signerRole?: string;
+    }>
+  ) {
+    const user = this.getCurrentUser();
+    const doc = this.getDocument(id);
+
+    for (const item of signatures) {
+      if (!item.signatureDataUrl) continue;
+      const sigEntry = {
+        id: `sig-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        fieldId: item.fieldId,
+        signerName: item.signerName || user.fullName,
+        signerRole: item.signerRole || user.roleName,
+        signatureDataUrl: item.signatureDataUrl,
+        type: item.type || 'DRAWN',
+        signedAt: new Date().toISOString(),
+        userId: user.id,
+      };
+
+      const existingIndex = doc.signatures.findIndex((s) => s.fieldId === item.fieldId);
+      if (existingIndex >= 0) {
+        doc.signatures[existingIndex] = sigEntry;
+      } else {
+        doc.signatures.push(sigEntry);
+      }
+    }
+
+    const oldStatus = doc.status;
+    if (
+      doc.status === 'DRAFT' ||
+      doc.status === 'NUMBER_ASSIGNED' ||
+      doc.status === 'AWAITING_SIGNATURE' ||
+      doc.status === 'SIGNED'
+    ) {
+      doc.status = 'AWAITING_APPROVAL';
+    }
+    doc.updatedAt = new Date().toISOString();
+
+    doc.statusHistory.push({
+      id: `sh-${Date.now()}`,
+      previousStatus: oldStatus,
       newStatus: doc.status,
-      signaturesCount: doc.signatures.length,
+      changedBy: user.id,
+      changedByName: user.fullName,
+      changedAt: new Date().toISOString(),
+      remarks: `Multiple digital signatures captured (${signatures.length} slots). Current signed count: ${doc.signatures.length}.`,
     });
+
+    this.recordAudit(user.id, user.fullName, 'Multiple Digital Signatures Applied', 'DOCUMENT', doc.id, `Slots: ${signatures.map(s => s.fieldId).join(', ')}`);
+    this.saveToStorage();
 
     return { success: true, document: doc };
   }

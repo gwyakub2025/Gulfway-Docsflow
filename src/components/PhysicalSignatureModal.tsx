@@ -8,6 +8,8 @@ import {
   AlertCircle,
   FileText,
   Eye,
+  Trash2,
+  RotateCcw,
 } from 'lucide-react';
 import { DocumentRecord } from '../types/index.js';
 import { api } from '../api.js';
@@ -50,6 +52,13 @@ export const PhysicalSignatureModal: React.FC<PhysicalSignatureModalProps> = ({
       setErrorMsg('');
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleClearUploadedFile = () => {
+    setUploadedSignedFileUrl(null);
+    setFileName('');
+    setUserConfirmedCorrect(false);
+    setErrorMsg('');
   };
 
   const handleSubmitSignedDocument = async () => {
@@ -179,25 +188,56 @@ export const PhysicalSignatureModal: React.FC<PhysicalSignatureModalProps> = ({
             Accepts scanned PDF, JPG, or PNG. Maximum upload size 25MB.
           </p>
 
-          <label className="block w-full border-2 border-dashed border-slate-300 hover:border-blue-500 rounded-xl p-5 text-center cursor-pointer hover:bg-blue-50/20 transition-all">
-            <Upload className="w-6 h-6 text-slate-400 mx-auto mb-1.5" />
-            <span className="text-xs font-semibold text-blue-600">
-              {fileName ? `File Selected: ${fileName}` : 'Click or drop scanned signed document'}
-            </span>
-            <input
-              type="file"
-              accept=".pdf,.jpg,.jpeg,.png"
-              onChange={handleFileUpload}
-              className="hidden"
-            />
-          </label>
-
-          {uploadedSignedFileUrl && (
-            <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center justify-between text-xs text-emerald-800">
-              <span className="font-semibold flex items-center gap-1.5">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                <span>Signed file uploaded ready for review</span>
+          {!uploadedSignedFileUrl ? (
+            <label className="block w-full border-2 border-dashed border-slate-300 hover:border-blue-500 rounded-xl p-5 text-center cursor-pointer hover:bg-blue-50/20 transition-all">
+              <Upload className="w-6 h-6 text-slate-400 mx-auto mb-1.5" />
+              <span className="text-xs font-semibold text-blue-600 block">
+                Click or drop scanned signed document (JPG, PNG, PDF)
               </span>
+              <input
+                type="file"
+                accept=".pdf,.jpg,.jpeg,.png"
+                onChange={handleFileUpload}
+                className="hidden"
+              />
+            </label>
+          ) : (
+            <div className="space-y-3">
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-semibold text-slate-800 flex items-center gap-1.5 truncate">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span className="truncate">{fileName || 'Scanned Document'}</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleClearUploadedFile}
+                    className="px-2.5 py-1 text-xs font-semibold text-rose-600 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg flex items-center gap-1 transition-colors shrink-0"
+                    title="Clear image preview and choose another file"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Clear Image Preview</span>
+                  </button>
+                </div>
+
+                {/* Scanned Image Preview if JPG or PNG */}
+                {uploadedSignedFileUrl.startsWith('data:image/') && (
+                  <div className="mt-2 bg-white p-2 rounded-lg border border-slate-200 flex justify-center max-h-56 overflow-auto">
+                    <img
+                      src={uploadedSignedFileUrl}
+                      alt="Scanned Preview"
+                      className="max-h-52 w-auto object-contain rounded"
+                    />
+                  </div>
+                )}
+
+                {uploadedSignedFileUrl.startsWith('data:application/pdf') && (
+                  <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg flex items-center gap-2 text-xs text-blue-800">
+                    <FileText className="w-5 h-5 text-blue-600" />
+                    <span>Scanned PDF document loaded ready for cryptographic audit storage</span>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>

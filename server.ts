@@ -758,8 +758,25 @@ function resolveTemplateForDocument(doc: Partial<DocumentRecord>): FormTemplate 
     if (safT) return safT;
   }
 
-  // 6. Safe fallback: first active template so PDF generation never crashes
-  return store.formTemplates[0];
+  // 6. Safe fallback: ensure templates are loaded and return first active template
+  if (!store.formTemplates || store.formTemplates.length === 0) {
+    store.loadFromDisk();
+  }
+  return (
+    store.formTemplates[0] ||
+    ({
+      id: doc.formTemplateId || 'form-salary-advance',
+      formCode: doc.formCode || 'SAF',
+      formName: doc.formName || 'Staff Salary Advance Request Official Sheet',
+      companyId: doc.companyId || 'comp-gwds',
+      version: '1.0',
+      status: 'PUBLISHED',
+      category: 'FINANCE',
+      fields: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    } as unknown as FormTemplate)
+  );
 }
 
 // ==========================================
@@ -768,12 +785,36 @@ function resolveTemplateForDocument(doc: Partial<DocumentRecord>): FormTemplate 
 // Stream or download Document PDF dynamically
 app.get('/api/documents/:id/pdf', async (req, res) => {
   const { id } = req.params;
-  const doc = store.documents.find((d) => d.id === id);
-  if (!doc) return res.status(404).send('Document not found');
+  let doc = store.findDocument(id);
+
+  if (!doc) {
+    store.loadFromDisk();
+    doc = store.findDocument(id);
+  }
+
+  // Fallback: client provided base64 encoded document data in query
+  if (!doc && req.query.docData && typeof req.query.docData === 'string') {
+    try {
+      const parsed = JSON.parse(Buffer.from(req.query.docData, 'base64').toString('utf-8'));
+      if (parsed && (parsed.id || parsed.documentNumber)) {
+        doc = store.syncDocument(parsed);
+      }
+    } catch (err) {
+      console.warn('[server] Could not parse docData query param:', err);
+    }
+  }
+
+  if (!doc) {
+    return res.status(404).json({
+      error: 'Document not found',
+      message: `Document with ID or number "${id}" is not registered in the database.`,
+      id,
+    });
+  }
 
   const template = resolveTemplateForDocument(doc);
   const company = store.companies.find((c) => c.id === doc.companyId) || store.companies[0];
-  if (!template) return res.status(404).send('Form template not found');
+  if (!template) return res.status(404).json({ error: 'Form template not found' });
 
   try {
     const isDraft = doc.status === 'DRAFT';
@@ -800,7 +841,102 @@ app.get('/api/documents/:id/pdf', async (req, res) => {
     res.setHeader('Expires', '0');
     res.send(Buffer.from(generated.pdfBytes));
   } catch (err: any) {
-    res.status(500).send(`Failed to generate PDF: ${err.message}`);
+    res.status(500).json({ error: `Failed to generate PDF: ${err.message}` });
+  }
+});
+
+// Stream or download Document PDF dynamically via POST (with instant document sync)
+app.post('/api/documents/:id/pdf', async (req, res) => {
+  const { id } = req.params;
+  let clientDoc = req.body?.document;
+  let doc: DocumentRecord | undefined;
+
+  if (clientDoc && (clientDoc.id || clientDoc.documentNumber)) {
+    doc = store.syncDocument(clientDoc);
+  } else {
+    doc = store.findDocument(id);
+    if (!doc) {
+      store.loadFromDisk();
+      doc = store.findDocument(id);
+    }
+  }
+
+  if (!doc) {
+    return res.status(404).json({ error: 'Document not found' });
+  }
+
+  const template = resolveTemplateForDocument(doc);
+  const company = store.companies.find((c) => c.id === doc.companyId) || store.companies[0];
+  if (!template) return res.status(404).json({ error: 'Form template not found' });
+
+  try {
+    const isDraft = doc.status === 'DRAFT';
+    const generated = await PdfGenerationEngine.generateDocumentPdf({
+      template,
+      document: doc,
+      company,
+      isDraftPreview: isDraft,
+      appUrl: getPublicBaseUrl(req),
+    });
+
+    const isDownload = req.query.download === 'true';
+    const cleanFilename = (doc.documentNumber || 'DOCUMENT').replace(/[/\\?%*:|"<>]/g, '-');
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Length', String(generated.pdfBytes.length));
+    res.setHeader(
+      'Content-Disposition',
+      `${isDownload ? 'attachment' : 'inline'}; filename="${cleanFilename}.pdf"`
+    );
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, Content-Length');
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    res.send(Buffer.from(generated.pdfBytes));
+  } catch (err: any) {
+    res.status(500).json({ error: `Failed to generate PDF: ${err.message}` });
+  }
+});
+
+// Dedicated PDF rendering endpoint supporting client-side fallback
+app.post('/api/documents/render-pdf', async (req, res) => {
+  const { document: clientDoc } = req.body;
+  if (!clientDoc || (!clientDoc.id && !clientDoc.documentNumber)) {
+    return res.status(400).json({ error: 'Valid document payload is required' });
+  }
+
+  const doc = store.syncDocument(clientDoc);
+  const template = resolveTemplateForDocument(doc);
+  const company = store.companies.find((c) => c.id === doc.companyId) || store.companies[0];
+  if (!template) return res.status(404).json({ error: 'Form template not found' });
+
+  try {
+    const isDraft = doc.status === 'DRAFT';
+    const generated = await PdfGenerationEngine.generateDocumentPdf({
+      template,
+      document: doc,
+      company,
+      isDraftPreview: isDraft,
+      appUrl: getPublicBaseUrl(req),
+    });
+
+    if (req.headers.accept?.includes('application/json')) {
+      return res.json({
+        success: true,
+        pdfBase64: generated.pdfBase64,
+        sha256Hash: generated.sha256Hash,
+      });
+    }
+
+    const cleanFilename = (doc.documentNumber || 'DOCUMENT').replace(/[/\\?%*:|"<>]/g, '-');
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Length', String(generated.pdfBytes.length));
+    res.setHeader('Content-Disposition', `inline; filename="${cleanFilename}.pdf"`);
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.send(Buffer.from(generated.pdfBytes));
+  } catch (err: any) {
+    res.status(500).json({ error: `Failed to render PDF: ${err.message}` });
   }
 });
 
@@ -832,14 +968,22 @@ app.get('/api/documents', (req, res) => {
 });
 
 app.get('/api/documents/:id', (req, res) => {
-  const doc = store.documents.find((d) => d.id === req.params.id);
+  let doc = store.findDocument(req.params.id);
+  if (!doc) {
+    store.loadFromDisk();
+    doc = store.findDocument(req.params.id);
+  }
   if (!doc) return res.status(404).json({ error: 'Document not found' });
   res.json(doc);
 });
 
 // GET DOCUMENT VERIFICATION QR CODE (JSON metadata & data URL)
 app.get('/api/documents/:id/qr-code', async (req, res) => {
-  const doc = store.documents.find((d) => d.id === req.params.id);
+  let doc = store.findDocument(req.params.id);
+  if (!doc) {
+    store.loadFromDisk();
+    doc = store.findDocument(req.params.id);
+  }
   if (!doc) return res.status(404).json({ error: 'Document not found' });
 
   try {
@@ -935,7 +1079,7 @@ app.put('/api/documents/:id', async (req, res) => {
   if (!checkPermission(req, res, 'DOCUMENT_EDIT_DRAFT')) return;
   const user = getCurrentUser();
   const { id } = req.params;
-  const { values, employeeName, employeeId } = req.body;
+  const { values, employeeName, employeeId, signedDocumentUrl, status } = req.body;
 
   const doc = store.documents.find((d) => d.id === id);
   if (!doc) return res.status(404).json({ error: 'Document not found' });
@@ -949,6 +1093,12 @@ app.put('/api/documents/:id', async (req, res) => {
   }
   if (employeeName) doc.employeeName = employeeName;
   if (employeeId) doc.employeeId = employeeId;
+  if (signedDocumentUrl !== undefined) {
+    doc.signedDocumentUrl = signedDocumentUrl;
+  }
+  if (status) {
+    doc.status = status;
+  }
   doc.updatedAt = new Date().toISOString();
 
   // Re-render PDF with updated form values
@@ -1196,18 +1346,7 @@ app.post('/api/documents/:id/digital-sign', async (req, res) => {
   if (!checkPermission(req, res, 'DOCUMENT_SIGN')) return;
   const user = getCurrentUser();
   const { id } = req.params;
-  const { fieldId, signatureDataUrl, type } = req.body;
-
-  console.log('[API /api/documents/:id/digital-sign] Processing signature payload (BEFORE UPDATE):', {
-    documentId: id,
-    fieldId,
-    type,
-    signatureDataUrlLength: signatureDataUrl?.length,
-    signatureDataUrlPrefix: signatureDataUrl?.substring(0, 40),
-    signerName: user.fullName,
-    signerRole: user.roleName,
-    timestamp: new Date().toISOString(),
-  });
+  const { fieldId, signatureDataUrl, type, signerName, signerRole, signatures } = req.body;
 
   const doc = store.documents.find((d) => d.id === id);
   if (!doc) return res.status(404).json({ error: 'Document not found' });
@@ -1219,39 +1358,49 @@ app.post('/api/documents/:id/digital-sign', async (req, res) => {
   const template = resolveTemplateForDocument(doc);
   const company = store.companies.find((c) => c.id === doc.companyId) || store.companies[0];
 
-  // Smartly resolve field ID if generic alias was provided
-  let targetFieldId = fieldId;
-  if (template) {
-    const sigFields = template.fields.filter((f) => f.type === 'signature');
-    if (sigFields.length > 0) {
-      const exactMatch = sigFields.find((f) => f.id === fieldId || f.name === fieldId);
-      if (exactMatch) {
-        targetFieldId = exactMatch.id;
-      } else if (!fieldId || fieldId === 'signature' || fieldId === 'sig_applicant') {
-        const applicantSlot = sigFields.find((f) => f.signerRole === 'USER' || !f.name.includes('hr'));
-        targetFieldId = applicantSlot ? applicantSlot.id : sigFields[0].id;
-      }
+  // Prepare signature items to apply (support either batch array or single item)
+  const itemsToApply: Array<{
+    fieldId: string;
+    signatureDataUrl: string;
+    type?: 'DRAWN' | 'UPLOADED' | 'THUMBPRINT';
+    signerName?: string;
+    signerRole?: string;
+  }> = Array.isArray(signatures) && signatures.length > 0
+    ? signatures
+    : [{ fieldId, signatureDataUrl, type, signerName, signerRole }];
+
+  console.log('[API /api/documents/:id/digital-sign] Processing signatures count:', itemsToApply.length, {
+    documentId: id,
+    slots: itemsToApply.map(i => i.fieldId),
+  });
+
+  for (const item of itemsToApply) {
+    if (!item.signatureDataUrl) continue;
+
+    // Use requested slot ID; preserve distinct slots (e.g. employee, employer, finance, approver)
+    const resolvedSlotId = item.fieldId || 'fld-emp-sig';
+    const effectiveSignerName = item.signerName || user.fullName;
+    const effectiveSignerRole = item.signerRole || user.roleName;
+
+    const sigEntry = {
+      id: `sig-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      fieldId: resolvedSlotId,
+      signerName: effectiveSignerName,
+      signerRole: effectiveSignerRole,
+      signatureDataUrl: item.signatureDataUrl,
+      type: item.type || ('DRAWN' as const),
+      signedAt: new Date().toISOString(),
+      userId: user.id,
+      ipAddress: req.ip || '127.0.0.1',
+    };
+
+    // Replace existing signature for this specific slot if already signed, or add
+    const existingSigIndex = doc.signatures.findIndex((s) => s.fieldId === resolvedSlotId);
+    if (existingSigIndex >= 0) {
+      doc.signatures[existingSigIndex] = sigEntry;
+    } else {
+      doc.signatures.push(sigEntry);
     }
-  }
-
-  const sigEntry = {
-    id: `sig-${Date.now()}`,
-    fieldId: targetFieldId || 'signature',
-    signerName: user.fullName,
-    signerRole: user.roleName,
-    signatureDataUrl,
-    type: type || ('DRAWN' as const),
-    signedAt: new Date().toISOString(),
-    userId: user.id,
-    ipAddress: req.ip || '127.0.0.1',
-  };
-
-  // Replace existing signature for this field if re-signed, or add new
-  const existingSigIndex = doc.signatures.findIndex((s) => s.fieldId === targetFieldId);
-  if (existingSigIndex >= 0) {
-    doc.signatures[existingSigIndex] = sigEntry;
-  } else {
-    doc.signatures.push(sigEntry);
   }
 
   const oldStatus = doc.status;
@@ -1266,10 +1415,10 @@ app.post('/api/documents/:id/digital-sign', async (req, res) => {
   }
   doc.updatedAt = new Date().toISOString();
 
-  // Re-generate PDF with newly embedded signature
+  // Re-generate PDF with all newly embedded signatures
   if (template) {
     try {
-      const updatedPdf = await PdfGenerationEngine.generateDocumentPdf({
+      await PdfGenerationEngine.generateDocumentPdf({
         template,
         document: doc,
         company,
@@ -1288,13 +1437,13 @@ app.post('/api/documents/:id/digital-sign', async (req, res) => {
     changedBy: user.id,
     changedByName: user.fullName,
     changedAt: new Date().toISOString(),
-    remarks: `Digital signature captured for ${user.fullName} (${user.roleName}) on field ${targetFieldId}`,
+    remarks: `Digital signatures recorded. Total active signatures on document: ${doc.signatures.length}.`,
   });
 
   store.recordAudit(user.id, user.fullName, 'Digital Signature Applied', 'DOCUMENT', doc.id, {
     oldValue: oldStatus,
     newValue: doc.status,
-    remarks: `Signature captured on field: ${targetFieldId}`,
+    remarks: `Slots signed: ${doc.signatures.map(s => s.fieldId).join(', ')}`,
     companyId: doc.companyId,
   });
 
@@ -1303,18 +1452,17 @@ app.post('/api/documents/:id/digital-sign', async (req, res) => {
     documentNumber: doc.documentNumber,
     previousStatus: oldStatus,
     newStatus: doc.status,
-    targetFieldId,
     signaturesCount: doc.signatures.length,
     signatures: doc.signatures.map((s) => ({
       id: s.id,
       fieldId: s.fieldId,
       signerName: s.signerName,
       type: s.type,
-      signatureDataLength: s.signatureDataUrl?.length,
     })),
     generatedPdfUrl: doc.generatedPdfUrl,
   });
 
+  store.persistToDisk();
   res.json({ success: true, document: doc });
 });
 
@@ -1359,6 +1507,7 @@ app.post('/api/documents/:id/approve', async (req, res) => {
     companyId: doc.companyId,
   });
 
+  store.persistToDisk();
   res.json({ success: true, document: doc });
 });
 
@@ -1402,6 +1551,7 @@ app.post('/api/documents/:id/reject', (req, res) => {
     companyId: doc.companyId,
   });
 
+  store.persistToDisk();
   res.json({ success: true, document: doc });
 });
 
@@ -1457,6 +1607,7 @@ app.post('/api/documents/:id/finalize', async (req, res) => {
     companyId: doc.companyId,
   });
 
+  store.persistToDisk();
   res.json({ success: true, document: doc });
 });
 
@@ -1491,6 +1642,7 @@ app.post('/api/documents/:id/void', (req, res) => {
     companyId: doc.companyId,
   });
 
+  store.persistToDisk();
   res.json({ success: true, document: doc });
 });
 

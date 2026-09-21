@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ArrowLeft,
   Download,
@@ -23,6 +23,7 @@ import {
   Pencil,
   Save,
   RefreshCw,
+  Trash2,
 } from 'lucide-react';
 import { DocumentRecord, User } from '../types/index.js';
 import { StatusBadge } from './StatusBadge.js';
@@ -73,6 +74,15 @@ export const DocumentDetails: React.FC<DocumentDetailsProps> = ({
     setNotification({ type, text });
     setTimeout(() => setNotification(null), 6000);
   };
+
+  // Ensure document record is synchronized to server so streaming endpoint never returns 404
+  useEffect(() => {
+    if (document && document.id) {
+      api.syncDocumentToServer(document).catch((e) => {
+        console.warn('Background sync notice:', e);
+      });
+    }
+  }, [document?.id, document?.updatedAt, pdfRefreshKey]);
 
   // Manager Approval Action
   const handleApprove = async () => {
@@ -137,6 +147,24 @@ export const DocumentDetails: React.FC<DocumentDetailsProps> = ({
       onDocumentUpdated(res.document);
     } catch (err: any) {
       showNotification('error', `Void failed: ${err.message}`);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Clear / remove uploaded physical scan if uploaded by mistake
+  const handleClearSignedAttachment = async () => {
+    if (!window.confirm('Are you sure you want to clear and remove this uploaded scanned copy?')) return;
+    setIsProcessing(true);
+    try {
+      const res = await api.updateDocument(document.id, {
+        signedDocumentUrl: null,
+        status: (document.signatures && document.signatures.length > 0) ? 'AWAITING_APPROVAL' : 'AWAITING_SIGNATURE',
+      });
+      showNotification('success', 'Uploaded scanned copy cleared.');
+      onDocumentUpdated(res.document);
+    } catch (err: any) {
+      showNotification('error', `Failed to clear scanned copy: ${err.message}`);
     } finally {
       setIsProcessing(false);
     }
@@ -322,7 +350,7 @@ export const DocumentDetails: React.FC<DocumentDetailsProps> = ({
             <>
               <button
                 onClick={() => onOpenDigitalSign(document)}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors"
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
                 title="Sign digitally on screen with digital pen or touch"
               >
                 <PenTool className="w-4 h-4" />
@@ -331,7 +359,7 @@ export const DocumentDetails: React.FC<DocumentDetailsProps> = ({
 
               <button
                 onClick={() => onOpenPhysicalSign(document)}
-                className="px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors"
+                className="px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
                 title="Print official copy and upload signed physical scan"
               >
                 <Printer className="w-4 h-4" />
@@ -340,13 +368,26 @@ export const DocumentDetails: React.FC<DocumentDetailsProps> = ({
             </>
           )}
 
-          {/* APPROVAL ACTIONS: When signed and waiting for manager */}
+          {/* APPROVAL & MULTI-SIGNING ACTIONS: When awaiting approval or intermediate signature */}
           {isPendingApproval && (
             <>
               <button
+                onClick={() => onOpenDigitalSign(document)}
+                className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+                title="Sign for Employer, Finance, or Approver"
+              >
+                <PenTool className="w-4 h-4" />
+                <span>
+                  {(document.signatures || []).length > 0
+                    ? `Sign Role (${(document.signatures || []).length}/4 Signed)`
+                    : 'Apply Digital Signature'}
+                </span>
+              </button>
+
+              <button
                 onClick={() => setRejectModalOpen(true)}
                 disabled={isProcessing}
-                className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5"
+                className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer"
               >
                 <XCircle className="w-4 h-4" />
                 <span>Reject</span>
@@ -355,7 +396,7 @@ export const DocumentDetails: React.FC<DocumentDetailsProps> = ({
               <button
                 onClick={() => setApproveModalOpen(true)}
                 disabled={isProcessing}
-                className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5"
+                className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
               >
                 <CheckCircle2 className="w-4 h-4" />
                 <span>Approve Document</span>
@@ -540,37 +581,124 @@ export const DocumentDetails: React.FC<DocumentDetailsProps> = ({
             </div>
           )}
 
-          {/* Captured Digital Signatures */}
-          {document.signatures && document.signatures.length > 0 && (
-            <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-2xs space-y-3">
-              <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                <FileCheck2 className="w-4 h-4 text-indigo-600" />
-                <span>Captured Digital Signatures ({document.signatures.length})</span>
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {document.signatures.map((sig) => (
-                  <div key={sig.id} className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-2">
+          {/* Multi-Signatory Corporate Verification & Sanctions Matrix */}
+          <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-2xs space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                  <FileCheck2 className="w-4 h-4 text-indigo-600" />
+                  <span>Corporate Signatory & Sanctions Matrix ({(document.signatures || []).length}/4 Signed)</span>
+                </h3>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Supports Employee, Employer, Finance & Accounts, and Approver sanctions.
+                </p>
+              </div>
+
+              {document.status !== 'FINAL' && document.status !== 'VOID' && (
+                <button
+                  onClick={() => onOpenDigitalSign(document)}
+                  className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <PenTool className="w-3.5 h-3.5" />
+                  <span>Sign Role</span>
+                </button>
+              )}
+            </div>
+
+            {/* 4 Standard Signatory Tiers Status Row */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+              {[
+                { role: 'Employee / Applicant', key: 'USER', idAlias: ['emp', 'applicant', 'rider', 'sig1'] },
+                { role: 'Employer / Manager', key: 'EMPLOYER', idAlias: ['employer', 'supervisor', 'manager', 'bhf-m'] },
+                { role: 'Finance & Accounts', key: 'FINANCE', idAlias: ['finance', 'account', 'payroll'] },
+                { role: 'Approver / Sanction', key: 'APPROVER', idAlias: ['approv', 'hr', 'director', 'sanction'] },
+              ].map((tier, idx) => {
+                const sigs = document.signatures || [];
+                const matchedSig = sigs.find((s) => {
+                  const fid = (s.fieldId || '').toLowerCase();
+                  const sRole = (s.signerRole || '').toLowerCase();
+                  return (
+                    s.signerRole === tier.key ||
+                    tier.idAlias.some((alias) => fid.includes(alias)) ||
+                    tier.idAlias.some((alias) => sRole.includes(alias))
+                  );
+                });
+
+                return (
+                  <div
+                    key={idx}
+                    className={`p-3 rounded-xl border flex flex-col justify-between min-h-[90px] ${
+                      matchedSig
+                        ? 'border-emerald-200 bg-emerald-50/40 text-emerald-950'
+                        : 'border-slate-200 bg-slate-50 text-slate-700'
+                    }`}
+                  >
                     <div className="flex items-center justify-between">
-                      <span className="font-bold text-xs text-slate-800">{sig.signerName}</span>
-                      <span className="text-[10px] font-mono text-slate-500">
-                        {sig.signedAt ? new Date(sig.signedAt).toLocaleString('en-GB') : 'Signed'}
-                      </span>
+                      <span className="text-[10px] font-bold text-slate-500">Tier {idx + 1}</span>
+                      {matchedSig ? (
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 flex items-center gap-0.5">
+                          ✓ Signed
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-slate-200 text-slate-600">
+                          Pending
+                        </span>
+                      )}
                     </div>
-                    <div className="text-[10px] text-slate-500">{sig.signerRole}</div>
-                    {sig.signatureDataUrl && (
-                      <div className="bg-white p-2 border border-slate-200 rounded flex items-center justify-center">
+
+                    <div className="mt-1">
+                      <div className="text-xs font-bold">{tier.role}</div>
+                      <div className="text-[11px] text-slate-500 truncate mt-0.5">
+                        {matchedSig ? matchedSig.signerName : 'Awaiting signature'}
+                      </div>
+                    </div>
+
+                    {matchedSig && matchedSig.signatureDataUrl && (
+                      <div className="mt-2 pt-1 border-t border-emerald-200/60 flex items-center justify-between">
                         <img
-                          src={sig.signatureDataUrl}
-                          alt="Digital Signature"
-                          className="max-h-16 max-w-full object-contain"
+                          src={matchedSig.signatureDataUrl}
+                          alt="Signature Thumbnail"
+                          className="h-5 max-w-[80px] object-contain bg-white rounded px-1"
                         />
+                        <span className="text-[9px] text-slate-400">
+                          {matchedSig.signedAt ? new Date(matchedSig.signedAt).toLocaleDateString('en-GB') : 'Verified'}
+                        </span>
                       </div>
                     )}
                   </div>
-                ))}
-              </div>
+                );
+              })}
             </div>
-          )}
+
+            {/* Captured Digital Signatures Detail List */}
+            {document.signatures && document.signatures.length > 0 && (
+              <div className="pt-2">
+                <div className="text-[11px] font-semibold text-slate-500 mb-2">Detailed Signatory Audit Log:</div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {document.signatures.map((sig) => (
+                    <div key={sig.id} className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-xs text-slate-800">{sig.signerName}</span>
+                        <span className="text-[10px] font-mono text-slate-500">
+                          {sig.signedAt ? new Date(sig.signedAt).toLocaleString('en-GB') : 'Signed'}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-slate-500">{sig.signerRole} (Slot: {sig.fieldId})</div>
+                      {sig.signatureDataUrl && (
+                        <div className="bg-white p-2 border border-slate-200 rounded flex items-center justify-center">
+                          <img
+                            src={sig.signatureDataUrl}
+                            alt="Digital Signature"
+                            className="max-h-16 max-w-full object-contain"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* Uploaded Physical Signed Copy */}
           {document.signedDocumentUrl && (
@@ -615,6 +743,17 @@ export const DocumentDetails: React.FC<DocumentDetailsProps> = ({
                     <Download className="w-3.5 h-3.5" />
                     <span>View / Download Scan</span>
                   </a>
+                  {document.status !== 'FINAL' && (
+                    <button
+                      onClick={handleClearSignedAttachment}
+                      disabled={isProcessing}
+                      className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs cursor-pointer"
+                      title="Clear and remove this uploaded scanned copy"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Clear Scan</span>
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -653,6 +792,7 @@ export const DocumentDetails: React.FC<DocumentDetailsProps> = ({
             <div className="w-full bg-slate-900 rounded-xl overflow-hidden shadow-inner h-[580px]">
               <PdfViewerCanvas
                 pdfUrl={pdfStreamUrl}
+                document={document}
                 documentNumber={document.documentNumber || 'Draft'}
                 title={`${document.formName || 'Document'} Official Sheet`}
                 onClose={() => setPreviewModalOpen(true)}
@@ -1145,6 +1285,7 @@ export const DocumentDetails: React.FC<DocumentDetailsProps> = ({
           <div className="max-w-5xl w-full h-[90vh]">
             <PdfViewerCanvas
               pdfUrl={pdfStreamUrl}
+              document={document}
               documentNumber={document.documentNumber || 'Draft Preview'}
               title={`${document.documentNumber || 'Draft Preview'} — ${document.formName} (Official Serial & QR)`}
               onClose={() => setPreviewModalOpen(false)}

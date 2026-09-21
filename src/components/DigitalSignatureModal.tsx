@@ -55,6 +55,14 @@ export const DigitalSignatureModal: React.FC<DigitalSignatureModalProps> = ({
               }));
 
             if (sigs.length > 0) {
+              // Ensure Employer/Approver slot exists if template only declared an applicant signature
+              if (sigs.length === 1) {
+                sigs.push({
+                  id: 'fld-hr-sig',
+                  label: 'Employer / Approver Signature',
+                  role: 'APPROVER',
+                });
+              }
               setAvailableSlots(sigs);
 
               // Smart default selection:
@@ -65,9 +73,11 @@ export const DigitalSignatureModal: React.FC<DigitalSignatureModalProps> = ({
               const isApproverUser =
                 currentUser?.roleName === 'APPROVER' ||
                 currentUser?.roleName === 'ADMIN' ||
-                currentUser?.roleName === 'SUPER_ADMIN';
+                currentUser?.roleName === 'SUPER_ADMIN' ||
+                currentUser?.roleName === 'Company Administrator' ||
+                currentUser?.roleName === 'Super Administrator';
 
-              if (isApproverUser && sigs.length > 1 && hasApplicantSigned) {
+              if ((isApproverUser || hasApplicantSigned) && sigs.length > 1) {
                 setSelectedSlotId(sigs[1].id);
               } else {
                 setSelectedSlotId(sigs[0].id);

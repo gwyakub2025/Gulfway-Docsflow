@@ -1,5 +1,5 @@
 import React from 'react';
-import { User, Shield, CheckCircle } from 'lucide-react';
+import { User, Shield, CheckCircle, Database } from 'lucide-react';
 import { User as UserType } from '../types/index.js';
 
 interface HeaderProps {
@@ -23,8 +23,10 @@ export const Header: React.FC<HeaderProps> = ({
         <div>
           <h2 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
             <span>Enterprise Form & Numbering Control</span>
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-semibold border border-blue-200">
-              v2026.1-PROD
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-semibold border border-emerald-200 flex items-center gap-1.5" title="Cloud Firestore Realtime DB Active">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              <Database className="w-2.5 h-2.5 text-emerald-600" />
+              <span>Database Connected</span>
             </span>
           </h2>
           <p className="text-xs text-slate-500">

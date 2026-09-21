@@ -864,6 +864,29 @@ class ClientLocalStorageStore {
     return { success: true, id };
   }
 
+  public bulkDeleteForms(ids: string[]): { success: boolean; deletedIds: string[] } {
+    const user = this.getCurrentUser();
+    const idSet = new Set(ids);
+    const deletedIds: string[] = [];
+    this.data.formTemplates = this.data.formTemplates.filter((f) => {
+      if (idSet.has(f.id)) {
+        deletedIds.push(f.id);
+        return false;
+      }
+      return true;
+    });
+    this.recordAudit(
+      user.id,
+      user.fullName,
+      'Forms Bulk Deleted',
+      'FORM',
+      'bulk',
+      `Bulk deleted ${deletedIds.length} forms: ${deletedIds.join(', ')}`
+    );
+    this.saveToStorage();
+    return { success: true, deletedIds };
+  }
+
   public getDocuments(filters?: { companyId?: string; status?: string; formId?: string; search?: string }): DocumentRecord[] {
     let docs = this.data.documents;
     if (filters?.companyId) docs = docs.filter((d) => d.companyId === filters.companyId);

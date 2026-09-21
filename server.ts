@@ -27,10 +27,36 @@ function checkPermission(req: express.Request, res: express.Response, requiredPe
     res.status(403).json({ error: 'Unauthorized: User account is inactive or disabled' });
     return false;
   }
-  // Super admin has wildcard access
-  if (user.roleName === 'Super Administrator' || user.permissions.includes(requiredPerm as any)) {
+  // Super admin or Company Administrator has wildcard access
+  if (
+    user.roleName === 'Super Administrator' ||
+    user.roleName === 'SUPER_ADMIN' ||
+    user.roleName === 'Company Administrator' ||
+    user.roleName === 'COMPANY_ADMIN' ||
+    user.roleName === 'Administrator' ||
+    user.roleName === 'ADMIN'
+  ) {
     return true;
   }
+  // Direct permissions check on user object
+  if (Array.isArray(user.permissions) && user.permissions.includes(requiredPerm as any)) {
+    return true;
+  }
+  // Role-based permissions lookup
+  const userRole = store.roles.find(
+    (r) => r.id === user.roleId || r.name === user.roleName || r.code === user.roleName
+  );
+  if (userRole && Array.isArray(userRole.permissions) && userRole.permissions.includes(requiredPerm as any)) {
+    return true;
+  }
+  // Approvers have DOCUMENT_APPROVE, DOCUMENT_SIGN, DOCUMENT_VIEW by default
+  if (
+    (user.roleName === 'Approver' || user.roleName === 'APPROVER' || user.roleName === 'HR Manager') &&
+    ['DOCUMENT_VIEW', 'DOCUMENT_SIGN', 'DOCUMENT_APPROVE', 'DOCUMENT_REJECT'].includes(requiredPerm)
+  ) {
+    return true;
+  }
+
   res.status(403).json({ error: `Forbidden: Missing required permission [${requiredPerm}]` });
   return false;
 }
@@ -515,6 +541,27 @@ app.delete('/api/forms/:id', (req, res) => {
   const success = store.deleteForm(id);
   if (!success) return res.status(404).json({ error: 'Form not found' });
   res.json({ success: true, id });
+});
+
+// BULK DELETE FORM TEMPLATES
+app.delete('/api/forms/bulk', (req, res) => {
+  if (!checkPermission(req, res, 'FORM_DELETE')) return;
+  const { ids } = req.body;
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: 'Array of template IDs is required' });
+  }
+  const deletedIds = store.bulkDeleteForms(ids);
+  res.json({ success: true, deletedIds, count: deletedIds.length });
+});
+
+// SYNC DOCUMENT FROM CLIENT
+app.post('/api/documents/sync', (req, res) => {
+  const { document } = req.body;
+  if (!document || !document.id) {
+    return res.status(400).json({ error: 'Valid document object is required' });
+  }
+  const synced = store.syncDocument(document);
+  res.json({ success: true, document: synced });
 });
 
 /**

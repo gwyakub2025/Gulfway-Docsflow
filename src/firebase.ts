@@ -13,8 +13,9 @@ import {
   query,
   orderBy,
 } from 'firebase/firestore';
-import { getAuth, Auth } from 'firebase/auth';
+import { getAuth, signInAnonymously, Auth } from 'firebase/auth';
 import { DocumentRecord, AuditLog } from './types/index.js';
+import firebaseAppletConfig from '../firebase-applet-config.json';
 
 export enum OperationType {
   CREATE = 'create',
@@ -46,8 +47,21 @@ let app: FirebaseApp | null = null;
 let db: Firestore | null = null;
 let auth: Auth | null = null;
 
-// Read config from environment or fallback
+// Read config from firebase-applet-config.json, environment, or window
 function getFirebaseConfig(): Record<string, any> | null {
+  if (firebaseAppletConfig && (firebaseAppletConfig as any).apiKey && (firebaseAppletConfig as any).projectId) {
+    const cfg = firebaseAppletConfig as any;
+    return {
+      apiKey: cfg.apiKey,
+      authDomain: cfg.authDomain || `${cfg.projectId}.firebaseapp.com`,
+      projectId: cfg.projectId,
+      storageBucket: cfg.storageBucket || `${cfg.projectId}.appspot.com`,
+      messagingSenderId: cfg.messagingSenderId || '',
+      appId: cfg.appId || '',
+      firestoreDatabaseId: cfg.firestoreDatabaseId || '(default)',
+    };
+  }
+
   const env = ((import.meta as any).env as Record<string, string | undefined>) || {};
   if (env.VITE_FIREBASE_API_KEY && env.VITE_FIREBASE_PROJECT_ID) {
     return {
@@ -84,7 +98,12 @@ export function initializeFirebase(): { app: FirebaseApp | null; db: Firestore |
     app = getApps().length > 0 ? getApp() : initializeApp(config);
     db = getFirestore(app, config.firestoreDatabaseId || '(default)');
     auth = getAuth(app);
-    console.log('[Firebase] Realtime Firestore initialized successfully for project:', config.projectId);
+    if (!auth.currentUser) {
+      signInAnonymously(auth).catch((authErr) => {
+        console.warn('[Firebase] Anonymous authentication notice:', authErr);
+      });
+    }
+    console.log('[Firebase] Realtime Firestore connected to project:', config.projectId, 'database:', config.firestoreDatabaseId);
   } catch (err) {
     console.warn('[Firebase] Initialization notice:', err);
   }
@@ -200,5 +219,21 @@ export function subscribeToRealtimeDocuments(onUpdate: (docs: DocumentRecord[]) 
   } catch (err) {
     console.warn('[Firebase] Could not subscribe to real-time documents:', err);
     return () => {};
+  }
+}
+
+export async function getDocumentsFromFirestore(): Promise<DocumentRecord[]> {
+  const { db: firestoreDb } = initializeFirebase();
+  if (!firestoreDb) return [];
+  try {
+    const snap = await getDocs(collection(firestoreDb, 'documents'));
+    const docs: DocumentRecord[] = [];
+    snap.forEach((d) => {
+      docs.push(d.data() as DocumentRecord);
+    });
+    return docs;
+  } catch (err) {
+    console.warn('[Firebase] Could not fetch documents from Firestore:', err);
+    return [];
   }
 }

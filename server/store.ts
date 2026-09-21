@@ -1,4 +1,6 @@
 import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
 import {
   Company,
   Department,
@@ -12,6 +14,9 @@ import {
   FormField,
 } from '../src/types/index.js';
 
+const DATA_DIR = path.join(process.cwd(), 'data');
+const STORE_FILE = path.join(DATA_DIR, 'server_store.json');
+
 class InMemoryStore {
   public companies: Company[] = [];
   public departments: Department[] = [];
@@ -24,6 +29,50 @@ class InMemoryStore {
 
   constructor() {
     this.seedInitialData();
+    this.loadFromDisk();
+  }
+
+  public persistToDisk(): void {
+    try {
+      if (!fs.existsSync(DATA_DIR)) {
+        fs.mkdirSync(DATA_DIR, { recursive: true });
+      }
+      const payload = {
+        companies: this.companies,
+        departments: this.departments,
+        roles: this.roles,
+        users: this.users,
+        numberingRules: this.numberingRules,
+        formTemplates: this.formTemplates,
+        documents: this.documents,
+        auditLogs: this.auditLogs,
+      };
+      fs.writeFileSync(STORE_FILE, JSON.stringify(payload, null, 2), 'utf-8');
+    } catch (err) {
+      console.warn('[server/store] Failed to persist store to disk:', err);
+    }
+  }
+
+  public loadFromDisk(): void {
+    try {
+      if (fs.existsSync(STORE_FILE)) {
+        const raw = fs.readFileSync(STORE_FILE, 'utf-8');
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed.companies)) this.companies = parsed.companies;
+        if (Array.isArray(parsed.departments)) this.departments = parsed.departments;
+        if (Array.isArray(parsed.roles)) this.roles = parsed.roles;
+        if (Array.isArray(parsed.users)) this.users = parsed.users;
+        if (Array.isArray(parsed.numberingRules)) this.numberingRules = parsed.numberingRules;
+        if (Array.isArray(parsed.formTemplates)) this.formTemplates = parsed.formTemplates;
+        if (Array.isArray(parsed.documents)) this.documents = parsed.documents;
+        if (Array.isArray(parsed.auditLogs)) this.auditLogs = parsed.auditLogs;
+        console.log(`[server/store] Loaded persisted store from disk (${this.documents.length} docs, ${this.formTemplates.length} templates)`);
+      } else {
+        this.persistToDisk();
+      }
+    } catch (err) {
+      console.warn('[server/store] Failed to load store from disk, keeping memory seed:', err);
+    }
   }
 
   private seedInitialData() {
@@ -1432,7 +1481,55 @@ class InMemoryStore {
     this.recordAudit('usr-admin', 'Super Administrator', 'Form Deleted', 'FORM', id, {
       remarks: `Deleted form: ${removed.formName} (${removed.formCode})`,
     });
+    this.persistToDisk();
     return true;
+  }
+
+  public bulkDeleteForms(ids: string[]): string[] {
+    const deletedIds: string[] = [];
+    const deletedNames: string[] = [];
+
+    this.formTemplates = this.formTemplates.filter((f) => {
+      if (ids.includes(f.id)) {
+        deletedIds.push(f.id);
+        deletedNames.push(`${f.formName} (${f.formCode})`);
+        return false;
+      }
+      return true;
+    });
+
+    if (deletedIds.length > 0) {
+      this.recordAudit('usr-admin', 'Super Administrator', 'Bulk Forms Deleted', 'FORM', deletedIds.join(','), {
+        remarks: `Bulk deleted ${deletedIds.length} form templates: ${deletedNames.join(', ')}`,
+      });
+      this.persistToDisk();
+    }
+    return deletedIds;
+  }
+
+  public findDocument(idOrNumber: string): DocumentRecord | undefined {
+    if (!idOrNumber) return undefined;
+    const clean = idOrNumber.trim();
+    return this.documents.find(
+      (d) =>
+        d.id === clean ||
+        d.documentNumber === clean ||
+        d.secureVerificationToken === clean ||
+        (d.documentNumber && d.documentNumber.toLowerCase() === clean.toLowerCase())
+    );
+  }
+
+  public syncDocument(doc: DocumentRecord): DocumentRecord {
+    const existingIdx = this.documents.findIndex(
+      (d) => d.id === doc.id || (doc.documentNumber && d.documentNumber === doc.documentNumber)
+    );
+    if (existingIdx >= 0) {
+      this.documents[existingIdx] = { ...this.documents[existingIdx], ...doc };
+    } else {
+      this.documents.unshift(doc);
+    }
+    this.persistToDisk();
+    return doc;
   }
 
   public deleteDocument(id: string): boolean {
@@ -1442,6 +1539,7 @@ class InMemoryStore {
     this.recordAudit('usr-admin', 'Super Administrator', 'Document Deleted', 'DOCUMENT', id, {
       remarks: `Deleted document ${removed.documentNumber || removed.id} (${removed.formName})`,
     });
+    this.persistToDisk();
     return true;
   }
 

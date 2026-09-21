@@ -9,6 +9,11 @@ import {
   AuditLog,
 } from './types/index.js';
 import { clientStore } from './localStore.js';
+import {
+  saveDocumentToFirestore,
+  deleteDocumentFromFirestore,
+  getDocumentsFromFirestore,
+} from './firebase.js';
 
 /**
  * Robust fetch helper that connects to the live backend server when available,
@@ -331,6 +336,21 @@ export const api = {
     );
   },
 
+  async bulkDeleteForms(ids: string[]): Promise<{ success: boolean; deletedIds: string[]; count: number }> {
+    return safeFetch(
+      '/api/forms/bulk',
+      {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      },
+      () => {
+        const res = clientStore.bulkDeleteForms(ids);
+        return { success: true, deletedIds: res.deletedIds, count: res.deletedIds.length };
+      }
+    );
+  },
+
   async testPreviewPdf(template: FormTemplate, sampleValues: Record<string, any>): Promise<{ pdfBase64: string; previewUrl?: string }> {
     return safeFetch(
       '/api/forms/test-preview-pdf',
@@ -353,7 +373,34 @@ export const api = {
     if (filters?.status) query.set('status', filters.status);
     if (filters?.formId) query.set('formId', filters.formId);
     if (filters?.search) query.set('search', filters.search);
-    return safeFetch(`/api/documents?${query.toString()}`, undefined, () => clientStore.getDocuments(filters));
+
+    const serverDocs = await safeFetch(`/api/documents?${query.toString()}`, undefined, () => clientStore.getDocuments(filters));
+
+    // Also fetch from Firestore and reconcile
+    try {
+      const firestoreDocs = await getDocumentsFromFirestore();
+      if (firestoreDocs.length > 0) {
+        const map = new Map<string, DocumentRecord>();
+        serverDocs.forEach((d) => map.set(d.id, d));
+        firestoreDocs.forEach((d) => {
+          // Firestore has priority or fills in documents
+          if (!map.has(d.id) || (d.updatedAt && map.get(d.id)!.updatedAt < d.updatedAt)) {
+            map.set(d.id, d);
+            // Sync to server in background
+            fetch('/api/documents/sync', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ document: d }),
+            }).catch(() => {});
+          }
+        });
+        return Array.from(map.values());
+      }
+    } catch (err) {
+      console.warn('[DocFlow API] Firestore reconciliation notice:', err);
+    }
+
+    return serverDocs;
   },
 
   async getDocument(id: string): Promise<DocumentRecord> {
@@ -398,7 +445,7 @@ export const api = {
   },
 
   async saveDraft(data: { formTemplateId: string; companyId: string; values: Record<string, any> }): Promise<DocumentRecord> {
-    return safeFetch(
+    const doc = await safeFetch(
       '/api/documents/draft',
       {
         method: 'POST',
@@ -407,6 +454,8 @@ export const api = {
       },
       () => clientStore.saveDraft(data)
     );
+    saveDocumentToFirestore(doc).catch(() => {});
+    return doc;
   },
 
   async updateDocument(
@@ -417,7 +466,7 @@ export const api = {
     document: DocumentRecord;
     pdfBase64?: string;
   }> {
-    return safeFetch(
+    const res = await safeFetch(
       `/api/documents/${id}`,
       {
         method: 'PUT',
@@ -426,6 +475,10 @@ export const api = {
       },
       () => clientStore.updateDocument(id, data)
     );
+    if (res.document) {
+      saveDocumentToFirestore(res.document).catch(() => {});
+    }
+    return res;
   },
 
   async generateDocumentNumber(id: string, signingMethod: 'PHYSICAL' | 'DIGITAL'): Promise<{
@@ -433,7 +486,7 @@ export const api = {
     document: DocumentRecord;
     pdfBase64: string;
   }> {
-    return safeFetch(
+    const res = await safeFetch(
       `/api/documents/${id}/generate-number`,
       {
         method: 'POST',
@@ -442,10 +495,14 @@ export const api = {
       },
       () => clientStore.generateDocumentNumber(id, signingMethod)
     );
+    if (res.document) {
+      saveDocumentToFirestore(res.document).catch(() => {});
+    }
+    return res;
   },
 
   async uploadSignedDocument(id: string, signedFileUrl: string, remarks?: string): Promise<{ success: boolean; document: DocumentRecord }> {
-    return safeFetch(
+    const res = await safeFetch(
       `/api/documents/${id}/upload-signed`,
       {
         method: 'POST',
@@ -454,6 +511,10 @@ export const api = {
       },
       () => clientStore.uploadSignedDocument(id, signedFileUrl, remarks)
     );
+    if (res.document) {
+      saveDocumentToFirestore(res.document).catch(() => {});
+    }
+    return res;
   },
 
   async applyDigitalSignature(
@@ -462,7 +523,7 @@ export const api = {
     signatureDataUrl: string,
     type: 'DRAWN' | 'UPLOADED' | 'THUMBPRINT'
   ): Promise<{ success: boolean; document: DocumentRecord }> {
-    return safeFetch(
+    const res = await safeFetch(
       `/api/documents/${id}/digital-sign`,
       {
         method: 'POST',
@@ -471,10 +532,14 @@ export const api = {
       },
       () => clientStore.applyDigitalSignature(id, fieldId, signatureDataUrl, type)
     );
+    if (res.document) {
+      saveDocumentToFirestore(res.document).catch(() => {});
+    }
+    return res;
   },
 
   async approveDocument(id: string, remarks?: string): Promise<{ success: boolean; document: DocumentRecord }> {
-    return safeFetch(
+    const res = await safeFetch(
       `/api/documents/${id}/approve`,
       {
         method: 'POST',
@@ -483,10 +548,14 @@ export const api = {
       },
       () => clientStore.approveDocument(id, remarks)
     );
+    if (res.document) {
+      saveDocumentToFirestore(res.document).catch(() => {});
+    }
+    return res;
   },
 
   async rejectDocument(id: string, remarks: string): Promise<{ success: boolean; document: DocumentRecord }> {
-    return safeFetch(
+    const res = await safeFetch(
       `/api/documents/${id}/reject`,
       {
         method: 'POST',
@@ -495,18 +564,26 @@ export const api = {
       },
       () => clientStore.rejectDocument(id, remarks)
     );
+    if (res.document) {
+      saveDocumentToFirestore(res.document).catch(() => {});
+    }
+    return res;
   },
 
   async finalizeDocument(id: string): Promise<{ success: boolean; document: DocumentRecord }> {
-    return safeFetch(
+    const res = await safeFetch(
       `/api/documents/${id}/finalize`,
       { method: 'POST' },
       () => clientStore.finalizeDocument(id)
     );
+    if (res.document) {
+      saveDocumentToFirestore(res.document).catch(() => {});
+    }
+    return res;
   },
 
   async voidDocument(id: string, remarks: string): Promise<{ success: boolean; document: DocumentRecord }> {
-    return safeFetch(
+    const res = await safeFetch(
       `/api/documents/${id}/void`,
       {
         method: 'POST',
@@ -515,14 +592,20 @@ export const api = {
       },
       () => clientStore.voidDocument(id, remarks)
     );
+    if (res.document) {
+      saveDocumentToFirestore(res.document).catch(() => {});
+    }
+    return res;
   },
 
   async deleteDocument(id: string): Promise<{ success: boolean; id: string }> {
-    return safeFetch(
+    const res = await safeFetch(
       `/api/documents/${id}`,
       { method: 'DELETE' },
       () => clientStore.deleteDocument(id)
     );
+    deleteDocumentFromFirestore(id).catch(() => {});
+    return res;
   },
 
   // Public Verification

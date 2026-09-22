@@ -7,7 +7,37 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    // Documents Collection: Allow reading, writing, and updating documents
+    // Companies Collection
+    match /companies/{companyId} {
+      allow read, write: if true;
+    }
+
+    // Departments Collection
+    match /departments/{departmentId} {
+      allow read, write: if true;
+    }
+
+    // Roles Collection (Module Access & Permissions)
+    match /roles/{roleId} {
+      allow read, write: if true;
+    }
+
+    // Users Collection (Accounts)
+    match /users/{userId} {
+      allow read, write: if true;
+    }
+
+    // Numbering Rules Collection
+    match /numberingRules/{ruleId} {
+      allow read, write: if true;
+    }
+
+    // Form Templates Collection
+    match /formTemplates/{templateId} {
+      allow read, write: if true;
+    }
+
+    // Documents Collection
     match /documents/{documentId} {
       allow read, write: if true;
     }
@@ -20,4 +50,3 @@ service cloud.firestore {
     }
   }
 }
-

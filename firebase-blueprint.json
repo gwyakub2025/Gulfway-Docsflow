@@ -1,5 +1,99 @@
 {
   "entities": {
+    "Company": {
+      "title": "Company",
+      "description": "Operating entity company legal record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 200 },
+        "code": { "type": "string", "maxLength": 30 },
+        "tradeLicenseNumber": { "type": "string", "maxLength": 100 },
+        "taxRegistrationNumber": { "type": "string", "maxLength": 100 },
+        "address": { "type": "string", "maxLength": 300 },
+        "phone": { "type": "string", "maxLength": 50 },
+        "email": { "type": "string", "maxLength": 100 },
+        "status": { "type": "string", "enum": ["ACTIVE", "INACTIVE"] },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "name", "code", "status", "createdAt", "updatedAt"]
+    },
+    "Department": {
+      "title": "Department",
+      "description": "Organizational department structure",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 150 },
+        "code": { "type": "string", "maxLength": 30 }
+      },
+      "required": ["id", "name", "code"]
+    },
+    "Role": {
+      "title": "Role",
+      "description": "User role with assigned module permissions",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 100 },
+        "code": { "type": "string", "maxLength": 50 },
+        "description": { "type": "string", "maxLength": 250 },
+        "isSystem": { "type": "boolean" }
+      },
+      "required": ["id", "name", "code"]
+    },
+    "User": {
+      "title": "User",
+      "description": "System user account with role-based access",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "fullName": { "type": "string", "maxLength": 150 },
+        "employeeId": { "type": "string", "maxLength": 50 },
+        "email": { "type": "string", "maxLength": 150 },
+        "phone": { "type": "string", "maxLength": 50 },
+        "companyId": { "type": "string", "maxLength": 128 },
+        "departmentId": { "type": "string", "maxLength": 128 },
+        "designation": { "type": "string", "maxLength": 100 },
+        "roleId": { "type": "string", "maxLength": 128 },
+        "roleName": { "type": "string", "maxLength": 100 },
+        "status": { "type": "string", "enum": ["ACTIVE", "DISABLED"] },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "fullName", "email", "roleId", "status"]
+    },
+    "NumberingRule": {
+      "title": "NumberingRule",
+      "description": "Sequential register rule configuration",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 150 },
+        "pattern": { "type": "string", "maxLength": 150 },
+        "prefix": { "type": "string", "maxLength": 50 },
+        "paddingZeros": { "type": "number" },
+        "currentSequence": { "type": "number" },
+        "isActive": { "type": "boolean" }
+      },
+      "required": ["id", "name", "pattern", "currentSequence"]
+    },
+    "FormTemplate": {
+      "title": "FormTemplate",
+      "description": "Form layout and workflow template",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "formName": { "type": "string", "maxLength": 200 },
+        "formCode": { "type": "string", "maxLength": 50 },
+        "status": { "type": "string", "enum": ["ACTIVE", "DRAFT", "ARCHIVED"] },
+        "currentVersion": { "type": "number" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "formName", "formCode", "status"]
+    },
     "DocumentRecord": {
       "title": "DocumentRecord",
       "description": "Official company documents with sequential serial numbers and signatures",
@@ -39,6 +133,30 @@
     }
   },
   "firestore": {
+    "/companies/{companyId}": {
+      "schema": "Company",
+      "description": "Collection of all created operating companies"
+    },
+    "/departments/{departmentId}": {
+      "schema": "Department",
+      "description": "Collection of organization departments"
+    },
+    "/roles/{roleId}": {
+      "schema": "Role",
+      "description": "Collection of user roles and module permissions"
+    },
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Collection of registered user accounts"
+    },
+    "/numberingRules/{ruleId}": {
+      "schema": "NumberingRule",
+      "description": "Collection of numbering rules"
+    },
+    "/formTemplates/{templateId}": {
+      "schema": "FormTemplate",
+      "description": "Collection of form templates"
+    },
     "/documents/{documentId}": {
       "schema": "DocumentRecord",
       "description": "Collection of all documents"

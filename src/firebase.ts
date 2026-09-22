@@ -14,7 +14,16 @@ import {
   orderBy,
 } from 'firebase/firestore';
 import { getAuth, signInAnonymously, Auth } from 'firebase/auth';
-import { DocumentRecord, AuditLog } from './types/index.js';
+import {
+  Company,
+  Department,
+  User,
+  Role,
+  NumberingRule,
+  FormTemplate,
+  DocumentRecord,
+  AuditLog,
+} from './types/index.js';
 import firebaseAppletConfig from '../firebase-applet-config.json';
 
 export enum OperationType {
@@ -237,3 +246,221 @@ export async function getDocumentsFromFirestore(): Promise<DocumentRecord[]> {
     return [];
   }
 }
+
+// COMPANIES FIRESTORE
+export async function saveCompanyToFirestore(company: Company): Promise<void> {
+  const { db: firestoreDb } = initializeFirebase();
+  if (!firestoreDb) return;
+  const path = 'companies';
+  try {
+    const sanitized = JSON.parse(JSON.stringify(company));
+    await setDoc(doc(firestoreDb, path, company.id), sanitized, { merge: true });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, `${path}/${company.id}`);
+  }
+}
+
+export async function deleteCompanyFromFirestore(companyId: string): Promise<void> {
+  const { db: firestoreDb } = initializeFirebase();
+  if (!firestoreDb) return;
+  const path = 'companies';
+  try {
+    await deleteDoc(doc(firestoreDb, path, companyId));
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, `${path}/${companyId}`);
+  }
+}
+
+export async function getCompaniesFromFirestore(): Promise<Company[]> {
+  const { db: firestoreDb } = initializeFirebase();
+  if (!firestoreDb) return [];
+  try {
+    const snap = await getDocs(collection(firestoreDb, 'companies'));
+    const comps: Company[] = [];
+    snap.forEach((d) => comps.push(d.data() as Company));
+    return comps;
+  } catch (err) {
+    console.warn('[Firebase] Could not fetch companies from Firestore:', err);
+    return [];
+  }
+}
+
+// DEPARTMENTS FIRESTORE
+export async function saveDepartmentToFirestore(dept: Department): Promise<void> {
+  const { db: firestoreDb } = initializeFirebase();
+  if (!firestoreDb) return;
+  const path = 'departments';
+  try {
+    const sanitized = JSON.parse(JSON.stringify(dept));
+    await setDoc(doc(firestoreDb, path, dept.id), sanitized, { merge: true });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, `${path}/${dept.id}`);
+  }
+}
+
+export async function deleteDepartmentFromFirestore(deptId: string): Promise<void> {
+  const { db: firestoreDb } = initializeFirebase();
+  if (!firestoreDb) return;
+  const path = 'departments';
+  try {
+    await deleteDoc(doc(firestoreDb, path, deptId));
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, `${path}/${deptId}`);
+  }
+}
+
+export async function getDepartmentsFromFirestore(): Promise<Department[]> {
+  const { db: firestoreDb } = initializeFirebase();
+  if (!firestoreDb) return [];
+  try {
+    const snap = await getDocs(collection(firestoreDb, 'departments'));
+    const depts: Department[] = [];
+    snap.forEach((d) => depts.push(d.data() as Department));
+    return depts;
+  } catch (err) {
+    console.warn('[Firebase] Could not fetch departments from Firestore:', err);
+    return [];
+  }
+}
+
+// ROLES FIRESTORE
+export async function saveRoleToFirestore(role: Role): Promise<void> {
+  const { db: firestoreDb } = initializeFirebase();
+  if (!firestoreDb) return;
+  const path = 'roles';
+  try {
+    const sanitized = JSON.parse(JSON.stringify(role));
+    await setDoc(doc(firestoreDb, path, role.id), sanitized, { merge: true });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, `${path}/${role.id}`);
+  }
+}
+
+export async function deleteRoleFromFirestore(roleId: string): Promise<void> {
+  const { db: firestoreDb } = initializeFirebase();
+  if (!firestoreDb) return;
+  const path = 'roles';
+  try {
+    await deleteDoc(doc(firestoreDb, path, roleId));
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, `${path}/${roleId}`);
+  }
+}
+
+export async function getRolesFromFirestore(): Promise<Role[]> {
+  const { db: firestoreDb } = initializeFirebase();
+  if (!firestoreDb) return [];
+  try {
+    const snap = await getDocs(collection(firestoreDb, 'roles'));
+    const roles: Role[] = [];
+    snap.forEach((d) => roles.push(d.data() as Role));
+    return roles;
+  } catch (err) {
+    console.warn('[Firebase] Could not fetch roles from Firestore:', err);
+    return [];
+  }
+}
+
+// USERS FIRESTORE
+export async function saveUserToFirestore(user: User): Promise<void> {
+  const { db: firestoreDb } = initializeFirebase();
+  if (!firestoreDb) return;
+  const path = 'users';
+  try {
+    const sanitized = JSON.parse(JSON.stringify(user));
+    await setDoc(doc(firestoreDb, path, user.id), sanitized, { merge: true });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, `${path}/${user.id}`);
+  }
+}
+
+export async function deleteUserFromFirestore(userId: string): Promise<void> {
+  const { db: firestoreDb } = initializeFirebase();
+  if (!firestoreDb) return;
+  const path = 'users';
+  try {
+    await deleteDoc(doc(firestoreDb, path, userId));
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, `${path}/${userId}`);
+  }
+}
+
+export async function getUsersFromFirestore(): Promise<User[]> {
+  const { db: firestoreDb } = initializeFirebase();
+  if (!firestoreDb) return [];
+  try {
+    const snap = await getDocs(collection(firestoreDb, 'users'));
+    const users: User[] = [];
+    snap.forEach((d) => users.push(d.data() as User));
+    return users;
+  } catch (err) {
+    console.warn('[Firebase] Could not fetch users from Firestore:', err);
+    return [];
+  }
+}
+
+// NUMBERING RULES FIRESTORE
+export async function saveNumberingRuleToFirestore(rule: NumberingRule): Promise<void> {
+  const { db: firestoreDb } = initializeFirebase();
+  if (!firestoreDb) return;
+  const path = 'numberingRules';
+  try {
+    const sanitized = JSON.parse(JSON.stringify(rule));
+    await setDoc(doc(firestoreDb, path, rule.id), sanitized, { merge: true });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, `${path}/${rule.id}`);
+  }
+}
+
+export async function getNumberingRulesFromFirestore(): Promise<NumberingRule[]> {
+  const { db: firestoreDb } = initializeFirebase();
+  if (!firestoreDb) return [];
+  try {
+    const snap = await getDocs(collection(firestoreDb, 'numberingRules'));
+    const rules: NumberingRule[] = [];
+    snap.forEach((d) => rules.push(d.data() as NumberingRule));
+    return rules;
+  } catch (err) {
+    console.warn('[Firebase] Could not fetch numbering rules from Firestore:', err);
+    return [];
+  }
+}
+
+// FORM TEMPLATES FIRESTORE
+export async function saveFormTemplateToFirestore(tpl: FormTemplate): Promise<void> {
+  const { db: firestoreDb } = initializeFirebase();
+  if (!firestoreDb) return;
+  const path = 'formTemplates';
+  try {
+    const sanitized = JSON.parse(JSON.stringify(tpl));
+    await setDoc(doc(firestoreDb, path, tpl.id), sanitized, { merge: true });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, `${path}/${tpl.id}`);
+  }
+}
+
+export async function deleteFormTemplateFromFirestore(tplId: string): Promise<void> {
+  const { db: firestoreDb } = initializeFirebase();
+  if (!firestoreDb) return;
+  const path = 'formTemplates';
+  try {
+    await deleteDoc(doc(firestoreDb, path, tplId));
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, `${path}/${tplId}`);
+  }
+}
+
+export async function getFormTemplatesFromFirestore(): Promise<FormTemplate[]> {
+  const { db: firestoreDb } = initializeFirebase();
+  if (!firestoreDb) return [];
+  try {
+    const snap = await getDocs(collection(firestoreDb, 'formTemplates'));
+    const templates: FormTemplate[] = [];
+    snap.forEach((d) => templates.push(d.data() as FormTemplate));
+    return templates;
+  } catch (err) {
+    console.warn('[Firebase] Could not fetch form templates from Firestore:', err);
+    return [];
+  }
+}
+

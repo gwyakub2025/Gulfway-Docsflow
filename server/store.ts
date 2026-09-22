@@ -76,60 +76,11 @@ class InMemoryStore {
   }
 
   private seedInitialData() {
-    // 1. Companies
-    this.companies = [
-      {
-        id: 'comp-gwds',
-        name: 'Gulf Way Delivery Services LLC',
-        code: 'GWDS',
-        tradeLicenseNumber: 'CN-1084920',
-        logoUrl: '',
-        stampUrl: '',
-        address: 'Al Quoz Industrial Area 3, Warehouse 14, Dubai, UAE',
-        phone: '+971 4 394 8820',
-        email: 'operations@gulfwaydelivery.ae',
-        status: 'ACTIVE',
-        createdAt: '2026-01-10T08:00:00.000Z',
-        updatedAt: '2026-01-10T08:00:00.000Z',
-      },
-      {
-        id: 'comp-gwt',
-        name: 'Gulf Way Transport LLC',
-        code: 'GWT',
-        tradeLicenseNumber: 'CN-1073841',
-        logoUrl: '',
-        stampUrl: '',
-        address: 'Mussafah Industrial Sector 9, Abu Dhabi, UAE',
-        phone: '+971 2 554 9912',
-        email: 'transport@gulfway.ae',
-        status: 'ACTIVE',
-        createdAt: '2026-01-15T09:00:00.000Z',
-        updatedAt: '2026-01-15T09:00:00.000Z',
-      },
-      {
-        id: 'comp-gwl',
-        name: 'Gulf Way Logistics & Express LLC',
-        code: 'GWL',
-        tradeLicenseNumber: 'CN-1092834',
-        logoUrl: '',
-        stampUrl: '',
-        address: 'Sharjah Airport International Free Zone (SAIF), Sharjah, UAE',
-        phone: '+971 6 526 1140',
-        email: 'logistics@gulfway.ae',
-        status: 'ACTIVE',
-        createdAt: '2026-02-01T10:00:00.000Z',
-        updatedAt: '2026-02-01T10:00:00.000Z',
-      },
-    ];
+    // 1. Companies (Clean Slate: Empty by default, user creates real operating entities)
+    this.companies = [];
 
-    // 2. Departments
-    this.departments = [
-      { id: 'dept-hr', code: 'HR', name: 'Human Resources' },
-      { id: 'dept-ops', code: 'OPS', name: 'Fleet & Operations' },
-      { id: 'dept-fin', code: 'FIN', name: 'Finance & Accounts' },
-      { id: 'dept-adm', code: 'ADM', name: 'General Administration' },
-      { id: 'dept-leg', code: 'LEG', name: 'Legal & Compliance' },
-    ];
+    // 2. Departments (Clean Slate: Empty by default, user creates real departments)
+    this.departments = [];
 
     // 3. System Roles & Granular Permissions
     const allPermissions: PermissionCode[] = [
@@ -253,75 +204,24 @@ class InMemoryStore {
       },
     ];
 
-    // 4. Default Seed Users
+    // 4. Default Authentic Super Administrator (Clean Slate - no dummy users)
     this.users = [
       {
         id: 'usr-admin',
-        fullName: 'Mohammed Al-Qasimi',
-        employeeId: 'EMP-001',
-        email: 'superadmin@gulfway.ae',
-        phone: '+971 50 112 3344',
-        companyId: 'comp-gwds',
-        companyIds: ['comp-gwds', 'comp-gwt', 'comp-gwl'],
-        departmentId: 'dept-adm',
-        designation: 'Managing Director & Super Admin',
+        fullName: 'System Administrator',
+        employeeId: 'ADM-001',
+        email: 'gw.yakub2025@gmail.com',
+        phone: '',
+        companyId: '',
+        companyIds: [],
+        departmentId: '',
+        designation: 'Group System Administrator',
         roleId: 'role-superadmin',
         roleName: 'Super Administrator',
         permissions: allPermissions,
         status: 'ACTIVE',
         createdAt: '2026-01-01T00:00:00.000Z',
         updatedAt: '2026-01-01T00:00:00.000Z',
-      },
-      {
-        id: 'usr-hr-fatima',
-        fullName: 'Fatima Al-Zahra',
-        employeeId: 'EMP-024',
-        email: 'fatima.hr@gulfway.ae',
-        phone: '+971 52 884 9123',
-        companyId: 'comp-gwds',
-        companyIds: ['comp-gwds', 'comp-gwt'],
-        departmentId: 'dept-hr',
-        designation: 'Head of Human Resources',
-        roleId: 'role-companyadmin',
-        roleName: 'Company Administrator',
-        permissions: this.roles.find((r) => r.id === 'role-companyadmin')!.permissions,
-        status: 'ACTIVE',
-        createdAt: '2026-01-15T00:00:00.000Z',
-        updatedAt: '2026-01-15T00:00:00.000Z',
-      },
-      {
-        id: 'usr-ops-tariq',
-        fullName: 'Tariq Mansoor',
-        employeeId: 'EMP-056',
-        email: 'tariq.ops@gulfway.ae',
-        phone: '+971 55 776 4321',
-        companyId: 'comp-gwds',
-        companyIds: ['comp-gwds'],
-        departmentId: 'dept-ops',
-        designation: 'Fleet & Operations Manager',
-        roleId: 'role-approver',
-        roleName: 'Official Approver / Manager',
-        permissions: this.roles.find((r) => r.id === 'role-approver')!.permissions,
-        status: 'ACTIVE',
-        createdAt: '2026-02-01T00:00:00.000Z',
-        updatedAt: '2026-02-01T00:00:00.000Z',
-      },
-      {
-        id: 'usr-rider-irfan',
-        fullName: 'Mohammed Irfan',
-        employeeId: 'RDR-1092',
-        email: 'irfan.rider@gulfway.ae',
-        phone: '+971 54 332 9988',
-        companyId: 'comp-gwds',
-        companyIds: ['comp-gwds'],
-        departmentId: 'dept-ops',
-        designation: 'Senior Fleet Dispatcher / Rider',
-        roleId: 'role-user',
-        roleName: 'Standard Employee / Rider',
-        permissions: this.roles.find((r) => r.id === 'role-user')!.permissions,
-        status: 'ACTIVE',
-        createdAt: '2026-03-01T00:00:00.000Z',
-        updatedAt: '2026-03-01T00:00:00.000Z',
       },
     ];
 

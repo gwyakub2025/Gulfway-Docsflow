@@ -9,8 +9,20 @@ import {
   AuditLog,
   FormField,
 } from './types/index.js';
+import {
+  saveCompanyToFirestore,
+  deleteCompanyFromFirestore,
+  saveDepartmentToFirestore,
+  deleteDepartmentFromFirestore,
+  saveRoleToFirestore,
+  deleteRoleFromFirestore,
+  saveUserToFirestore,
+  deleteUserFromFirestore,
+  saveDocumentToFirestore,
+  saveAuditLogToFirestore,
+} from './firebase.js';
 
-const STORAGE_KEY = 'gulfway_docflow_client_store_v4_clean';
+const STORAGE_KEY = 'gulfway_docflow_v7_real_data';
 
 interface StoreData {
   companies: Company[];
@@ -24,67 +36,9 @@ interface StoreData {
   currentUserId: string;
 }
 
-const DEFAULT_COMPANIES: Company[] = [
-  {
-    id: 'comp-gwds',
-    name: 'Gulf Way Delivery Services LLC',
-    code: 'GWDS',
-    tradeLicenseNumber: 'CN-1084920',
-    taxRegistrationNumber: '100293848100003',
-    logoUrl: '',
-    stampUrl: '',
-    officialStampUrl: '',
-    address: 'Al Quoz Industrial Area 3, Warehouse 14, Dubai, UAE',
-    phone: '+971 4 394 8820',
-    email: 'operations@gulfwaydelivery.ae',
-    status: 'ACTIVE',
-    isActive: true,
-    createdAt: '2026-01-10T08:00:00.000Z',
-    updatedAt: '2026-01-10T08:00:00.000Z',
-  },
-  {
-    id: 'comp-gwt',
-    name: 'Gulf Way Transport LLC',
-    code: 'GWT',
-    tradeLicenseNumber: 'CN-1073841',
-    taxRegistrationNumber: '100384729100003',
-    logoUrl: '',
-    stampUrl: '',
-    officialStampUrl: '',
-    address: 'Mussafah Industrial Sector 9, Abu Dhabi, UAE',
-    phone: '+971 2 554 9912',
-    email: 'transport@gulfway.ae',
-    status: 'ACTIVE',
-    isActive: true,
-    createdAt: '2026-01-15T09:00:00.000Z',
-    updatedAt: '2026-01-15T09:00:00.000Z',
-  },
-  {
-    id: 'comp-gwl',
-    name: 'Gulf Way Logistics & Express LLC',
-    code: 'GWL',
-    tradeLicenseNumber: 'CN-1092834',
-    taxRegistrationNumber: '100483920100003',
-    logoUrl: '',
-    stampUrl: '',
-    officialStampUrl: '',
-    address: 'Sharjah Airport International Free Zone (SAIF), Sharjah, UAE',
-    phone: '+971 6 526 1140',
-    email: 'logistics@gulfway.ae',
-    status: 'ACTIVE',
-    isActive: true,
-    createdAt: '2026-02-01T10:00:00.000Z',
-    updatedAt: '2026-02-01T10:00:00.000Z',
-  },
-];
+const DEFAULT_COMPANIES: Company[] = [];
 
-const DEFAULT_DEPARTMENTS: Department[] = [
-  { id: 'dept-hr', code: 'HR', name: 'Human Resources' },
-  { id: 'dept-ops', code: 'OPS', name: 'Fleet & Operations' },
-  { id: 'dept-fin', code: 'FIN', name: 'Finance & Accounts' },
-  { id: 'dept-adm', code: 'ADM', name: 'General Administration' },
-  { id: 'dept-leg', code: 'LEG', name: 'Legal & Compliance' },
-];
+const DEFAULT_DEPARTMENTS: Department[] = [];
 
 const DEFAULT_ROLES: Role[] = [
   {
@@ -98,7 +52,7 @@ const DEFAULT_ROLES: Role[] = [
       'FORM_VIEW', 'FORM_CREATE', 'FORM_EDIT', 'FORM_DELETE', 'FORM_PUBLISH',
       'DOCUMENT_CREATE', 'DOCUMENT_VIEW', 'DOCUMENT_EDIT_DRAFT', 'DOCUMENT_GENERATE',
       'DOCUMENT_SIGN', 'DOCUMENT_APPROVE', 'DOCUMENT_REJECT', 'DOCUMENT_VOID', 'DOCUMENT_DOWNLOAD',
-      'COMPANY_MANAGE', 'NUMBERING_MANAGE', 'AUDIT_VIEW', 'SETTINGS_MANAGE', 'COMPANY_STAMP'
+      'COMPANY_MANAGE', 'DEPARTMENT_MANAGE', 'ROLE_MANAGE', 'NUMBERING_MANAGE', 'AUDIT_VIEW', 'SETTINGS_MANAGE', 'COMPANY_STAMP'
     ],
   },
   {
@@ -110,7 +64,7 @@ const DEFAULT_ROLES: Role[] = [
     permissions: [
       'USER_VIEW', 'FORM_VIEW', 'DOCUMENT_CREATE', 'DOCUMENT_VIEW', 'DOCUMENT_EDIT_DRAFT',
       'DOCUMENT_GENERATE', 'DOCUMENT_SIGN', 'DOCUMENT_APPROVE', 'DOCUMENT_REJECT',
-      'DOCUMENT_DOWNLOAD', 'AUDIT_VIEW'
+      'DOCUMENT_DOWNLOAD', 'AUDIT_VIEW', 'COMPANY_STAMP'
     ],
   },
   {
@@ -120,7 +74,7 @@ const DEFAULT_ROLES: Role[] = [
     description: 'Authorizes and reviews submitted documents, signs sanction approvals.',
     isSystem: true,
     permissions: [
-      'DOCUMENT_VIEW', 'DOCUMENT_APPROVE', 'DOCUMENT_REJECT', 'DOCUMENT_DOWNLOAD'
+      'DOCUMENT_VIEW', 'DOCUMENT_SIGN', 'DOCUMENT_APPROVE', 'DOCUMENT_REJECT', 'DOCUMENT_DOWNLOAD'
     ],
   },
   {
@@ -130,7 +84,17 @@ const DEFAULT_ROLES: Role[] = [
     description: 'Generates document requests, signs forms digitally, downloads official copies.',
     isSystem: true,
     permissions: [
-      'DOCUMENT_CREATE', 'DOCUMENT_VIEW', 'DOCUMENT_EDIT_DRAFT', 'DOCUMENT_SIGN', 'DOCUMENT_DOWNLOAD'
+      'FORM_VIEW', 'DOCUMENT_CREATE', 'DOCUMENT_VIEW', 'DOCUMENT_EDIT_DRAFT', 'DOCUMENT_SIGN', 'DOCUMENT_DOWNLOAD'
+    ],
+  },
+  {
+    id: 'role-auditor',
+    code: 'AUDITOR',
+    name: 'Compliance Auditor',
+    description: 'Read-only inspection of document register, cryptographic hashes and audit history',
+    isSystem: true,
+    permissions: [
+      'USER_VIEW', 'FORM_VIEW', 'DOCUMENT_VIEW', 'AUDIT_VIEW', 'DOCUMENT_DOWNLOAD'
     ],
   },
 ];
@@ -138,71 +102,20 @@ const DEFAULT_ROLES: Role[] = [
 const DEFAULT_USERS: User[] = [
   {
     id: 'usr-admin',
-    fullName: 'Yacine Belkacem',
-    employeeId: 'GW-001',
+    fullName: 'System Administrator',
+    employeeId: 'ADM-001',
     email: 'gw.yakub2025@gmail.com',
-    phone: '+971 50 111 2233',
-    companyId: 'comp-gwds',
-    companyIds: ['comp-gwds', 'comp-gwt', 'comp-gwl'],
-    departmentId: 'dept-adm',
-    designation: 'Group Managing Director & Compliance Officer',
+    phone: '',
+    companyId: '',
+    companyIds: [],
+    departmentId: '',
+    designation: 'Group System Administrator',
     roleId: 'role-super-admin',
     roleName: 'Super Administrator',
     status: 'ACTIVE',
     permissions: DEFAULT_ROLES[0].permissions,
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
-  },
-  {
-    id: 'usr-hr-sara',
-    fullName: 'Sara Al-Mansoor',
-    employeeId: 'GW-042',
-    email: 'sara.m@gulfway.ae',
-    phone: '+971 52 234 5678',
-    companyId: 'comp-gwds',
-    companyIds: ['comp-gwds'],
-    departmentId: 'dept-hr',
-    designation: 'Senior HR Operations Officer',
-    roleId: 'role-approver',
-    roleName: 'Department Approver / Manager',
-    status: 'ACTIVE',
-    permissions: DEFAULT_ROLES[2].permissions,
-    createdAt: '2026-01-12T00:00:00.000Z',
-    updatedAt: '2026-01-12T00:00:00.000Z',
-  },
-  {
-    id: 'usr-ops-tariq',
-    fullName: 'Tariq Mansoor',
-    employeeId: 'GW-088',
-    email: 'tariq.m@gulfway.ae',
-    phone: '+971 55 876 5432',
-    companyId: 'comp-gwt',
-    companyIds: ['comp-gwt'],
-    departmentId: 'dept-ops',
-    designation: 'Fleet & Dispatch Supervisor',
-    roleId: 'role-company-admin',
-    roleName: 'Entity Operations Lead',
-    status: 'ACTIVE',
-    permissions: DEFAULT_ROLES[1].permissions,
-    createdAt: '2026-02-01T00:00:00.000Z',
-    updatedAt: '2026-02-01T00:00:00.000Z',
-  },
-  {
-    id: 'usr-rider-irfan',
-    fullName: 'Mohammed Irfan',
-    employeeId: 'EMP-9022',
-    email: 'irfan.m@gulfway.ae',
-    phone: '+971 54 908 1234',
-    companyId: 'comp-gwds',
-    companyIds: ['comp-gwds'],
-    departmentId: 'dept-ops',
-    designation: 'Fleet Courier Rider',
-    roleId: 'role-user',
-    roleName: 'Rider / Operations Staff',
-    status: 'ACTIVE',
-    permissions: DEFAULT_ROLES[3].permissions,
-    createdAt: '2026-02-15T00:00:00.000Z',
-    updatedAt: '2026-02-15T00:00:00.000Z',
   },
 ];
 
@@ -527,6 +440,7 @@ class ClientLocalStorageStore {
     this.data.companies.push(newCompany);
     this.recordAudit(user.id, user.fullName, 'Company Created', 'COMPANY', newCompany.id, `${newCompany.name} (${newCompany.code})`);
     this.saveToStorage();
+    saveCompanyToFirestore(newCompany).catch(console.warn);
     return newCompany;
   }
 
@@ -543,6 +457,7 @@ class ClientLocalStorageStore {
     this.data.companies[idx] = updated;
     this.recordAudit(user.id, user.fullName, 'Company Updated', 'COMPANY', id, `Renamed ${old.name} -> ${updated.name}`);
     this.saveToStorage();
+    saveCompanyToFirestore(updated).catch(console.warn);
     return updated;
   }
 
@@ -553,6 +468,7 @@ class ClientLocalStorageStore {
     const removed = this.data.companies.splice(idx, 1)[0];
     this.recordAudit(user.id, user.fullName, 'Company Deleted', 'COMPANY', id, `Deleted company: ${removed.name} (${removed.code})`);
     this.saveToStorage();
+    deleteCompanyFromFirestore(id).catch(console.warn);
     return { success: true, id };
   }
 
@@ -578,6 +494,7 @@ class ClientLocalStorageStore {
     };
     this.data.departments.push(newDept);
     this.saveToStorage();
+    saveDepartmentToFirestore(newDept).catch(console.warn);
     return newDept;
   }
 
@@ -586,6 +503,7 @@ class ClientLocalStorageStore {
     if (idx === -1) throw new Error('Department not found');
     this.data.departments.splice(idx, 1);
     this.saveToStorage();
+    deleteDepartmentFromFirestore(id).catch(console.warn);
     return { success: true, id };
   }
 
@@ -602,9 +520,9 @@ class ClientLocalStorageStore {
       employeeId: data.employeeId || `EMP-${Math.floor(100 + Math.random() * 900)}`,
       email: data.email || 'user@example.com',
       phone: data.phone || '',
-      companyId: data.companyId || 'comp-gwds',
-      companyIds: data.companyIds || [data.companyId || 'comp-gwds'],
-      departmentId: data.departmentId || 'dept-ops',
+      companyId: data.companyId || (this.data.companies[0]?.id || ''),
+      companyIds: data.companyIds || (data.companyId ? [data.companyId] : []),
+      departmentId: data.departmentId || (this.data.departments[0]?.id || ''),
       designation: data.designation || 'Staff',
       roleId: role.id,
       roleName: role.name,
@@ -616,6 +534,7 @@ class ClientLocalStorageStore {
     this.data.users.push(newUser);
     this.recordAudit(user.id, user.fullName, 'User Created', 'USER', newUser.id, `${newUser.fullName} (${newUser.roleName})`);
     this.saveToStorage();
+    saveUserToFirestore(newUser).catch(console.warn);
     return newUser;
   }
 
@@ -639,6 +558,7 @@ class ClientLocalStorageStore {
     this.data.users[idx] = updated;
     this.recordAudit(user.id, user.fullName, 'User Updated', 'USER', id, `Updated ${updated.fullName}`);
     this.saveToStorage();
+    saveUserToFirestore(updated).catch(console.warn);
     return updated;
   }
 
@@ -649,6 +569,7 @@ class ClientLocalStorageStore {
     const removed = this.data.users.splice(idx, 1)[0];
     this.recordAudit(user.id, user.fullName, 'User Deleted', 'USER', id, `Deleted user ${removed.fullName}`);
     this.saveToStorage();
+    deleteUserFromFirestore(id).catch(console.warn);
     return { success: true, id };
   }
 
@@ -669,6 +590,7 @@ class ClientLocalStorageStore {
     this.data.roles.push(newRole);
     this.recordAudit(user.id, user.fullName, 'Role Created', 'AUTH', newRole.id, `Created ${newRole.name}`);
     this.saveToStorage();
+    saveRoleToFirestore(newRole).catch(console.warn);
     return newRole;
   }
 
@@ -688,10 +610,12 @@ class ClientLocalStorageStore {
       if (u.roleId === id) {
         if (data.name) u.roleName = data.name;
         if (data.permissions) u.permissions = data.permissions;
+        saveUserToFirestore(u).catch(console.warn);
       }
     });
     this.recordAudit(user.id, user.fullName, 'Role Updated', 'AUTH', id, `Updated role ${updated.name}`);
     this.saveToStorage();
+    saveRoleToFirestore(updated).catch(console.warn);
     return updated;
   }
 
@@ -702,7 +626,29 @@ class ClientLocalStorageStore {
     const removed = this.data.roles.splice(idx, 1)[0];
     this.recordAudit(user.id, user.fullName, 'Role Deleted', 'AUTH', id, `Deleted role ${removed.name}`);
     this.saveToStorage();
+    deleteRoleFromFirestore(id).catch(console.warn);
     return { success: true, id };
+  }
+
+  public syncFromFirestore(data: {
+    companies?: Company[];
+    departments?: Department[];
+    roles?: Role[];
+    users?: User[];
+    numberingRules?: NumberingRule[];
+    formTemplates?: FormTemplate[];
+    documents?: DocumentRecord[];
+    auditLogs?: AuditLog[];
+  }) {
+    if (data.companies !== undefined) this.data.companies = data.companies;
+    if (data.departments !== undefined) this.data.departments = data.departments;
+    if (data.roles !== undefined && data.roles.length > 0) this.data.roles = data.roles;
+    if (data.users !== undefined && data.users.length > 0) this.data.users = data.users;
+    if (data.numberingRules !== undefined && data.numberingRules.length > 0) this.data.numberingRules = data.numberingRules;
+    if (data.formTemplates !== undefined && data.formTemplates.length > 0) this.data.formTemplates = data.formTemplates;
+    if (data.documents !== undefined) this.data.documents = data.documents;
+    if (data.auditLogs !== undefined) this.data.auditLogs = data.auditLogs;
+    this.saveToStorage();
   }
 
   public getNumberingRules(): NumberingRule[] {

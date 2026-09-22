@@ -13,8 +13,10 @@ import {
   ShieldAlert,
   SlidersHorizontal,
   FileSpreadsheet,
+  Sliders,
+  Shield,
 } from 'lucide-react';
-import { Company } from '../types/index.js';
+import { Company, User } from '../types/index.js';
 
 interface SidebarProps {
   currentTab: string;
@@ -24,6 +26,7 @@ interface SidebarProps {
   onSelectCompany: (companyId: string) => void;
   pendingSignaturesCount: number;
   pendingApprovalsCount: number;
+  currentUser?: User | null;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -34,35 +37,57 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onSelectCompany,
   pendingSignaturesCount,
   pendingApprovalsCount,
+  currentUser,
 }) => {
-  const mainNavItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'analytics', label: 'Analytics & Insights', icon: BarChart3 },
-    { id: 'form-library', label: 'Forms Catalog', icon: FileSpreadsheet },
-    { id: 'create-document', label: 'Create Document', icon: PlusCircle },
-    { id: 'document-register', label: 'Document Register', icon: FolderKanban },
+  const userPerms = new Set(currentUser?.permissions || []);
+  const isSuperAdmin =
+    currentUser?.roleName?.toLowerCase().includes('admin') ||
+    userPerms.has('ROLE_MANAGE') ||
+    userPerms.has('COMPANY_MANAGE');
+
+  // Check permission helper
+  const hasPerm = (perm: string) => isSuperAdmin || userPerms.has(perm as any);
+
+  const allMainNavItems = [
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, visible: true },
+    { id: 'analytics', label: 'Analytics & Insights', icon: BarChart3, visible: hasPerm('AUDIT_VIEW') || hasPerm('DOCUMENT_VIEW') },
+    { id: 'form-library', label: 'Forms Catalog', icon: FileSpreadsheet, visible: hasPerm('FORM_VIEW') },
+    { id: 'create-document', label: 'Create Document', icon: PlusCircle, visible: hasPerm('DOCUMENT_CREATE') },
+    { id: 'document-register', label: 'Document Register', icon: FolderKanban, visible: hasPerm('DOCUMENT_VIEW') },
     {
       id: 'pending-signatures',
       label: 'Pending Signatures',
       icon: PenTool,
       badge: pendingSignaturesCount > 0 ? pendingSignaturesCount : null,
+      visible: hasPerm('DOCUMENT_SIGN'),
     },
     {
       id: 'pending-approvals',
       label: 'Pending Approvals',
       icon: CheckSquare,
       badge: pendingApprovalsCount > 0 ? pendingApprovalsCount : null,
+      visible: hasPerm('DOCUMENT_APPROVE') || hasPerm('DOCUMENT_REJECT'),
     },
   ];
 
-  const adminNavItems = [
-    { id: 'form-builder', label: 'Form Builder', icon: FileText },
-    { id: 'numbering-rules', label: 'Numbering Rules', icon: Binary },
-    { id: 'companies', label: 'Companies', icon: Building2 },
-    { id: 'users-roles', label: 'Users & Roles', icon: Users },
-    { id: 'audit-logs', label: 'Audit Logs', icon: ShieldAlert },
-    { id: 'settings', label: 'System Architecture', icon: SlidersHorizontal },
+  const allAdminNavItems = [
+    {
+      id: 'admin-panel',
+      label: 'Admin Control Panel',
+      icon: Sliders,
+      badge: 'RBAC',
+      visible: isSuperAdmin || hasPerm('ROLE_MANAGE') || hasPerm('USER_CREATE') || hasPerm('COMPANY_MANAGE'),
+    },
+    { id: 'form-builder', label: 'Form Builder', icon: FileText, visible: hasPerm('FORM_CREATE') || hasPerm('FORM_EDIT') },
+    { id: 'numbering-rules', label: 'Numbering Rules', icon: Binary, visible: hasPerm('NUMBERING_MANAGE') },
+    { id: 'companies', label: 'Companies', icon: hasPerm('COMPANY_MANAGE') },
+    { id: 'users-roles', label: 'Users & Roles', icon: Users, visible: hasPerm('USER_VIEW') || hasPerm('ROLE_MANAGE') },
+    { id: 'audit-logs', label: 'Audit Logs', icon: ShieldAlert, visible: hasPerm('AUDIT_VIEW') },
+    { id: 'settings', label: 'System Architecture', icon: SlidersHorizontal, visible: isSuperAdmin },
   ];
+
+  const mainNavItems = allMainNavItems.filter((item) => item.visible);
+  const adminNavItems = allAdminNavItems.filter((item) => item.visible);
 
   return (
     <aside className="w-68 bg-slate-900 text-slate-300 flex flex-col h-screen border-r border-slate-800 shrink-0 select-none">
@@ -141,40 +166,66 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </nav>
         </div>
 
-        <div>
-          <span className="px-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-            Governance & Rules
-          </span>
-          <nav className="mt-2 space-y-1">
-            {adminNavItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = currentTab === item.id;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => onSelectTab(item.id)}
-                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
-                    isActive
-                      ? 'bg-blue-600 text-white font-semibold shadow-xs'
-                      : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5">
-                    <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-slate-400'}`} />
-                    <span>{item.label}</span>
-                  </div>
-                </button>
-              );
-            })}
-          </nav>
-        </div>
+        {adminNavItems.length > 0 && (
+          <div>
+            <span className="px-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+              Governance & Admin
+            </span>
+            <nav className="mt-2 space-y-1">
+              {adminNavItems.map((item) => {
+                const Icon = item.icon;
+                const isActive = currentTab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => onSelectTab(item.id)}
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
+                      isActive
+                        ? 'bg-blue-600 text-white font-semibold shadow-xs'
+                        : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-slate-400'}`} />
+                      <span>{item.label}</span>
+                    </div>
+                    {item.badge && (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-500/30 text-blue-300 font-bold border border-blue-400/30">
+                        {item.badge}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </nav>
+          </div>
+        )}
       </div>
 
+      {/* User Session Role Badge */}
+      {currentUser && (
+        <div className="px-3 py-2 bg-slate-950/40 border-t border-slate-800/60">
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 rounded-full bg-blue-600/30 border border-blue-500/40 flex items-center justify-center text-[10px] font-bold text-blue-300">
+              <Shield className="w-3 h-3" />
+            </div>
+            <div className="overflow-hidden">
+              <div className="text-[11px] font-semibold text-slate-200 truncate">
+                {currentUser.fullName}
+              </div>
+              <div className="text-[10px] text-blue-400 font-medium truncate">
+                {currentUser.roleName}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Footer Security Badge */}
-      <div className="p-3 bg-slate-950/60 border-t border-slate-800/80 text-xs">
+      <div className="p-3 bg-slate-950/80 border-t border-slate-800/80 text-xs">
         <div className="flex items-center gap-2 text-emerald-400 text-[11px] font-medium">
           <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-          <span>Atomic Sequence Engine Active</span>
+          <span>Atomic Sequence Engine</span>
         </div>
         <p className="text-[10px] text-slate-400 mt-0.5">
           SHA-256 Tamper-Evident Records

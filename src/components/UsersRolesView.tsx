@@ -18,6 +18,9 @@ import {
   UserCheck,
   UserPlus,
   Sparkles,
+  Search,
+  FileText,
+  Sliders,
 } from 'lucide-react';
 import { User, Role, Company, PermissionCode } from '../types/index.js';
 import { api } from '../api.js';
@@ -44,9 +47,9 @@ export const PERMISSION_GROUPS: {
     label: 'Forms & Templates',
     description: 'Design, modify, and publish corporate form schemas',
     permissions: [
-      { code: 'FORM_VIEW', label: 'View Forms', desc: 'Browse available corporate form templates' },
+      { code: 'FORM_VIEW', label: 'View Forms Catalog', desc: 'Browse available corporate form templates' },
       { code: 'FORM_CREATE', label: 'Create Forms', desc: 'Design new form templates in visual builder' },
-      { code: 'FORM_EDIT', label: 'Edit Forms', desc: 'Modify fields, coordinates, and schemas' },
+      { code: 'FORM_EDIT', label: 'Template Editing', desc: 'Modify fields, coordinates, instructions, and layout schemas' },
       { code: 'FORM_DELETE', label: 'Delete Forms', desc: 'Permanently remove draft templates' },
       { code: 'FORM_PUBLISH', label: 'Publish Forms', desc: 'Activate forms for live issuance' },
     ],
@@ -64,6 +67,7 @@ export const PERMISSION_GROUPS: {
       { code: 'DOCUMENT_APPROVE', label: 'Approve Documents', desc: 'Grant management sanction & sign off' },
       { code: 'DOCUMENT_REJECT', label: 'Reject Documents', desc: 'Decline requests with compliance remarks' },
       { code: 'DOCUMENT_VOID', label: 'Void Documents', desc: 'Revoke and void official serial numbers' },
+      { code: 'DOCUMENT_DELETE', label: 'Document Deletion', desc: 'Permanently delete draft, voided, or test documents from register' },
       { code: 'DOCUMENT_DOWNLOAD', label: 'Download PDF', desc: 'Download cryptographically sealed PDF copies' },
     ],
   },
@@ -73,7 +77,9 @@ export const PERMISSION_GROUPS: {
     description: 'Operating companies, sequential registers, and audit verification',
     permissions: [
       { code: 'COMPANY_MANAGE', label: 'Manage Companies', desc: 'Add or modify group operating entities' },
+      { code: 'DEPARTMENT_MANAGE', label: 'Manage Departments', desc: 'Configure corporate department accounts & routing codes' },
       { code: 'NUMBERING_MANAGE', label: 'Numbering Rules', desc: 'Configure sequential register patterns' },
+      { code: 'ROLE_MANAGE', label: 'Manage Roles & RBAC', desc: 'Configure user roles and granular capability permissions' },
       { code: 'AUDIT_VIEW', label: 'Audit Inspection', desc: 'Access immutable SHA-256 compliance logs' },
       { code: 'SETTINGS_MANAGE', label: 'System Settings', desc: 'Configure system-wide parameters' },
       { code: 'COMPANY_STAMP', label: 'Authorize Stamp', desc: 'Affix official corporate verification seal' },
@@ -92,6 +98,8 @@ interface UsersRolesViewProps {
   onRoleCreated?: (newRole: Role) => void;
   onRoleUpdated?: (updatedRole: Role) => void;
   onRoleDeleted?: (deletedRoleId: string) => void;
+  onSwitchToMatrix?: () => void;
+  onImpersonateUser?: (userId: string) => void;
 }
 
 export const UsersRolesView: React.FC<UsersRolesViewProps> = ({
@@ -105,6 +113,8 @@ export const UsersRolesView: React.FC<UsersRolesViewProps> = ({
   onRoleCreated,
   onRoleUpdated,
   onRoleDeleted,
+  onSwitchToMatrix,
+  onImpersonateUser,
 }) => {
   const [usersList, setUsersList] = useState<User[]>(initialUsers);
   const [rolesList, setRolesList] = useState<Role[]>(initialRoles);
@@ -151,6 +161,7 @@ export const UsersRolesView: React.FC<UsersRolesViewProps> = ({
   const [editRoleName, setEditRoleName] = useState('');
   const [editRoleDescription, setEditRoleDescription] = useState('');
   const [isSavingRole, setIsSavingRole] = useState(false);
+  const [permissionSearchTerm, setPermissionSearchTerm] = useState('');
 
   // New Role Form State
   const [newRoleName, setNewRoleName] = useState('');
@@ -312,6 +323,81 @@ export const UsersRolesView: React.FC<UsersRolesViewProps> = ({
     }
   };
 
+  // Direct toggle for granular guardrails
+  const handleDirectTogglePermission = (permCode: PermissionCode) => {
+    if (!selectedRole) return;
+    if (!isEditingPermissions) {
+      setIsEditingPermissions(true);
+      setEditRoleName(selectedRole.name);
+      setEditRoleDescription(selectedRole.description);
+      const current = selectedRole.permissions;
+      if (current.includes(permCode)) {
+        setDraftPermissions(current.filter((p) => p !== permCode));
+      } else {
+        setDraftPermissions([...current, permCode]);
+      }
+    } else {
+      handleTogglePermission(permCode);
+    }
+  };
+
+  // Quick capability presets
+  const handleApplyPreset = (preset: 'ALL' | 'OPERATIONS' | 'TEMPLATES' | 'AUDIT' | 'CLEAR') => {
+    if (!selectedRole) return;
+    if (!isEditingPermissions) {
+      setIsEditingPermissions(true);
+      setEditRoleName(selectedRole.name);
+      setEditRoleDescription(selectedRole.description);
+    }
+    switch (preset) {
+      case 'ALL': {
+        const all = PERMISSION_GROUPS.flatMap((g) => g.permissions.map((p) => p.code));
+        setDraftPermissions(Array.from(new Set(all)));
+        break;
+      }
+      case 'OPERATIONS': {
+        const ops: PermissionCode[] = [
+          'FORM_VIEW',
+          'DOCUMENT_CREATE',
+          'DOCUMENT_VIEW',
+          'DOCUMENT_EDIT_DRAFT',
+          'DOCUMENT_GENERATE',
+          'DOCUMENT_SIGN',
+          'DOCUMENT_DOWNLOAD',
+        ];
+        setDraftPermissions(ops);
+        break;
+      }
+      case 'TEMPLATES': {
+        const templates: PermissionCode[] = [
+          'FORM_VIEW',
+          'FORM_CREATE',
+          'FORM_EDIT',
+          'FORM_PUBLISH',
+          'DOCUMENT_VIEW',
+          'DOCUMENT_DOWNLOAD',
+        ];
+        setDraftPermissions(templates);
+        break;
+      }
+      case 'AUDIT': {
+        const audit: PermissionCode[] = [
+          'USER_VIEW',
+          'FORM_VIEW',
+          'DOCUMENT_VIEW',
+          'AUDIT_VIEW',
+          'DOCUMENT_DOWNLOAD',
+        ];
+        setDraftPermissions(audit);
+        break;
+      }
+      case 'CLEAR': {
+        setDraftPermissions([]);
+        break;
+      }
+    }
+  };
+
   // Save Configured Permissions for Role
   const handleSaveRolePermissions = async () => {
     if (!selectedRole) return;
@@ -437,6 +523,17 @@ export const UsersRolesView: React.FC<UsersRolesViewProps> = ({
 
         {/* Quick Add Buttons */}
         <div className="flex items-center gap-2">
+          {onSwitchToMatrix && (
+            <button
+              type="button"
+              onClick={onSwitchToMatrix}
+              className="px-3.5 py-2 bg-gradient-to-r from-indigo-50 to-blue-50 hover:from-indigo-100 hover:to-blue-100 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-semibold shadow-2xs transition-colors flex items-center gap-1.5 cursor-pointer"
+            >
+              <Sliders className="w-3.5 h-3.5 text-indigo-600" />
+              <span>Full RBAC Matrix View</span>
+            </button>
+          )}
+
           <button
             type="button"
             onClick={handleOpenAddRole}
@@ -579,6 +676,18 @@ export const UsersRolesView: React.FC<UsersRolesViewProps> = ({
 
                         <td className="py-3 px-4 text-right">
                           <div className="flex items-center justify-end gap-1">
+                            {onImpersonateUser && currentUser?.id !== u.id && (
+                              <button
+                                type="button"
+                                onClick={() => onImpersonateUser(u.id)}
+                                className="px-2 py-1 text-xs font-bold text-indigo-700 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 rounded-md transition-colors flex items-center gap-1 cursor-pointer mr-1"
+                                title={`Impersonate ${u.fullName} to view screen, check approvals, and transact`}
+                              >
+                                <UserCheck className="w-3.5 h-3.5" />
+                                <span className="hidden sm:inline">Impersonate</span>
+                              </button>
+                            )}
+
                             <button
                               type="button"
                               onClick={() => handleOpenEditUser(u)}
@@ -712,22 +821,263 @@ export const UsersRolesView: React.FC<UsersRolesViewProps> = ({
                   )}
                 </div>
 
-                {/* Capabilities List / Configurator */}
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                      System Capabilities ({isEditingPermissions ? draftPermissions.length : selectedRole.permissions.length} Granted)
-                    </span>
-                    {isEditingPermissions && (
-                      <span className="text-[10px] text-blue-600 font-medium">
-                        Click checkboxes to toggle privileges
+                {/* Granular Authority Guardrails Card */}
+                <div className="p-3.5 bg-gradient-to-br from-slate-900 to-slate-800 rounded-2xl text-white space-y-3 shadow-md border border-slate-700/50">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-6 h-6 rounded-lg bg-blue-500/20 text-blue-400 flex items-center justify-center">
+                        <Sliders className="w-3.5 h-3.5" />
+                      </div>
+                      <span className="text-xs font-bold uppercase tracking-wider text-slate-200">
+                        Critical Feature Guardrails
                       </span>
+                    </div>
+                    <span className="text-[10px] text-slate-400 font-mono">
+                      {isEditingPermissions ? 'EDITING MODE' : 'CLICK TO TOGGLE'}
+                    </span>
+                  </div>
+
+                  <p className="text-[11px] text-slate-300 leading-relaxed">
+                    Instantly grant or restrict sensitive enterprise actions for <strong className="text-white">{selectedRole.name}</strong>.
+                  </p>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {/* Guardrail 1: Document Deletion */}
+                    {(() => {
+                      const hasDocDelete = (
+                        isEditingPermissions ? draftPermissions : selectedRole.permissions
+                      ).includes('DOCUMENT_DELETE');
+                      return (
+                        <div
+                          onClick={() => handleDirectTogglePermission('DOCUMENT_DELETE')}
+                          className={`p-2.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between ${
+                            hasDocDelete
+                              ? 'bg-rose-950/40 border-rose-500/40 text-rose-200'
+                              : 'bg-slate-800/60 border-slate-700/60 text-slate-400 hover:border-slate-600'
+                          }`}
+                        >
+                          <div className="min-w-0 pr-2">
+                            <div className="text-[11px] font-bold flex items-center gap-1.5 text-white">
+                              <Trash2 className="w-3 h-3 text-rose-400" />
+                              <span>Document Deletion</span>
+                            </div>
+                            <div className="text-[10px] text-slate-400 truncate">
+                              Purge records from registry
+                            </div>
+                          </div>
+                          <span
+                            className={`text-[9px] font-bold px-2 py-0.5 rounded-full shrink-0 font-mono ${
+                              hasDocDelete
+                                ? 'bg-rose-500 text-white shadow-xs'
+                                : 'bg-slate-700 text-slate-400'
+                            }`}
+                          >
+                            {hasDocDelete ? 'ENABLED' : 'RESTRICTED'}
+                          </span>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Guardrail 2: Template Editing */}
+                    {(() => {
+                      const hasFormEdit = (
+                        isEditingPermissions ? draftPermissions : selectedRole.permissions
+                      ).includes('FORM_EDIT');
+                      return (
+                        <div
+                          onClick={() => handleDirectTogglePermission('FORM_EDIT')}
+                          className={`p-2.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between ${
+                            hasFormEdit
+                              ? 'bg-blue-950/40 border-blue-500/40 text-blue-200'
+                              : 'bg-slate-800/60 border-slate-700/60 text-slate-400 hover:border-slate-600'
+                          }`}
+                        >
+                          <div className="min-w-0 pr-2">
+                            <div className="text-[11px] font-bold flex items-center gap-1.5 text-white">
+                              <Edit2 className="w-3 h-3 text-blue-400" />
+                              <span>Template Editing</span>
+                            </div>
+                            <div className="text-[10px] text-slate-400 truncate">
+                              Alter forms & coordinates
+                            </div>
+                          </div>
+                          <span
+                            className={`text-[9px] font-bold px-2 py-0.5 rounded-full shrink-0 font-mono ${
+                              hasFormEdit
+                                ? 'bg-blue-600 text-white shadow-xs'
+                                : 'bg-slate-700 text-slate-400'
+                            }`}
+                          >
+                            {hasFormEdit ? 'ENABLED' : 'RESTRICTED'}
+                          </span>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Guardrail 3: Template Deletion */}
+                    {(() => {
+                      const hasFormDelete = (
+                        isEditingPermissions ? draftPermissions : selectedRole.permissions
+                      ).includes('FORM_DELETE');
+                      return (
+                        <div
+                          onClick={() => handleDirectTogglePermission('FORM_DELETE')}
+                          className={`p-2.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between ${
+                            hasFormDelete
+                              ? 'bg-amber-950/40 border-amber-500/40 text-amber-200'
+                              : 'bg-slate-800/60 border-slate-700/60 text-slate-400 hover:border-slate-600'
+                          }`}
+                        >
+                          <div className="min-w-0 pr-2">
+                            <div className="text-[11px] font-bold flex items-center gap-1.5 text-white">
+                              <FileText className="w-3 h-3 text-amber-400" />
+                              <span>Template Deletion</span>
+                            </div>
+                            <div className="text-[10px] text-slate-400 truncate">
+                              Remove form schemas
+                            </div>
+                          </div>
+                          <span
+                            className={`text-[9px] font-bold px-2 py-0.5 rounded-full shrink-0 font-mono ${
+                              hasFormDelete
+                                ? 'bg-amber-600 text-white shadow-xs'
+                                : 'bg-slate-700 text-slate-400'
+                            }`}
+                          >
+                            {hasFormDelete ? 'ENABLED' : 'RESTRICTED'}
+                          </span>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Guardrail 4: Document Voiding */}
+                    {(() => {
+                      const hasVoid = (
+                        isEditingPermissions ? draftPermissions : selectedRole.permissions
+                      ).includes('DOCUMENT_VOID');
+                      return (
+                        <div
+                          onClick={() => handleDirectTogglePermission('DOCUMENT_VOID')}
+                          className={`p-2.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between ${
+                            hasVoid
+                              ? 'bg-purple-950/40 border-purple-500/40 text-purple-200'
+                              : 'bg-slate-800/60 border-slate-700/60 text-slate-400 hover:border-slate-600'
+                          }`}
+                        >
+                          <div className="min-w-0 pr-2">
+                            <div className="text-[11px] font-bold flex items-center gap-1.5 text-white">
+                              <Lock className="w-3 h-3 text-purple-400" />
+                              <span>Void Serial Numbers</span>
+                            </div>
+                            <div className="text-[10px] text-slate-400 truncate">
+                              Revoke official issued docs
+                            </div>
+                          </div>
+                          <span
+                            className={`text-[9px] font-bold px-2 py-0.5 rounded-full shrink-0 font-mono ${
+                              hasVoid
+                                ? 'bg-purple-600 text-white shadow-xs'
+                                : 'bg-slate-700 text-slate-400'
+                            }`}
+                          >
+                            {hasVoid ? 'ENABLED' : 'RESTRICTED'}
+                          </span>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
+
+                {/* Capabilities List / Configurator */}
+                <div className="space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                      All Capabilities ({isEditingPermissions ? draftPermissions.length : selectedRole.permissions.length} Granted)
+                    </span>
+
+                    {/* Quick Preset Buttons */}
+                    <div className="flex flex-wrap items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => handleApplyPreset('ALL')}
+                        className="px-2 py-0.5 text-[10px] font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded transition-colors"
+                        title="Grant all system capabilities"
+                      >
+                        All
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleApplyPreset('OPERATIONS')}
+                        className="px-2 py-0.5 text-[10px] font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded transition-colors"
+                        title="Set standard document operations"
+                      >
+                        Operations
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleApplyPreset('TEMPLATES')}
+                        className="px-2 py-0.5 text-[10px] font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded transition-colors"
+                        title="Grant form design & template editing"
+                      >
+                        Templates
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleApplyPreset('AUDIT')}
+                        className="px-2 py-0.5 text-[10px] font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded transition-colors"
+                        title="Read-only compliance audit inspection"
+                      >
+                        Auditor
+                      </button>
+                      {isEditingPermissions && (
+                        <button
+                          type="button"
+                          onClick={() => handleApplyPreset('CLEAR')}
+                          className="px-2 py-0.5 text-[10px] font-semibold bg-rose-50 hover:bg-rose-100 text-rose-700 rounded transition-colors"
+                          title="Deselect all permissions"
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Search Capabilities Filter */}
+                  <div className="relative">
+                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+                    <input
+                      type="text"
+                      value={permissionSearchTerm}
+                      onChange={(e) => setPermissionSearchTerm(e.target.value)}
+                      placeholder="Filter capabilities (e.g. delete, template, sign, stamp)..."
+                      className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:bg-white focus:outline-hidden focus:border-blue-500"
+                    />
+                    {permissionSearchTerm && (
+                      <button
+                        type="button"
+                        onClick={() => setPermissionSearchTerm('')}
+                        className="absolute right-2 top-2 text-slate-400 hover:text-slate-600"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
                     )}
                   </div>
 
-                  <div className="space-y-3 max-h-[380px] overflow-y-auto pr-1">
+                  <div className="space-y-3 max-h-[340px] overflow-y-auto pr-1">
                     {PERMISSION_GROUPS.map((group) => {
-                      const allGroupSelected = group.permissions.every((p) =>
+                      const filteredPermissions = group.permissions.filter((p) => {
+                        if (!permissionSearchTerm.trim()) return true;
+                        const term = permissionSearchTerm.toLowerCase();
+                        return (
+                          p.label.toLowerCase().includes(term) ||
+                          p.code.toLowerCase().includes(term) ||
+                          p.desc.toLowerCase().includes(term)
+                        );
+                      });
+
+                      if (filteredPermissions.length === 0) return null;
+
+                      const allGroupSelected = filteredPermissions.every((p) =>
                         (isEditingPermissions
                           ? draftPermissions
                           : selectedRole.permissions
@@ -746,7 +1096,7 @@ export const UsersRolesView: React.FC<UsersRolesViewProps> = ({
                             {isEditingPermissions && (
                               <button
                                 type="button"
-                                onClick={() => handleToggleGroup(group.permissions)}
+                                onClick={() => handleToggleGroup(filteredPermissions)}
                                 className="text-[10px] text-blue-600 hover:text-blue-800 font-semibold cursor-pointer"
                               >
                                 {allGroupSelected ? 'Deselect All' : 'Select All'}
@@ -755,7 +1105,7 @@ export const UsersRolesView: React.FC<UsersRolesViewProps> = ({
                           </div>
 
                           <div className="divide-y divide-slate-100">
-                            {group.permissions.map((perm) => {
+                            {filteredPermissions.map((perm) => {
                               const isGranted = (
                                 isEditingPermissions
                                   ? draftPermissions

@@ -31,6 +31,7 @@ interface CompaniesViewProps {
   onDepartmentCreated?: (newDept: Department) => void;
   onDepartmentDeleted?: (deletedId: string) => void;
   onResetAllData?: () => void;
+  onOpenOnboarding?: () => void;
 }
 
 export const CompaniesView: React.FC<CompaniesViewProps> = ({
@@ -42,6 +43,7 @@ export const CompaniesView: React.FC<CompaniesViewProps> = ({
   onDepartmentCreated,
   onDepartmentDeleted,
   onResetAllData,
+  onOpenOnboarding,
 }) => {
   const [showModal, setShowModal] = useState(false);
   const [companyToEdit, setCompanyToEdit] = useState<Company | null>(null);
@@ -316,6 +318,19 @@ export const CompaniesView: React.FC<CompaniesViewProps> = ({
         </div>
 
         <div className="flex items-center gap-2.5">
+          {onOpenOnboarding && (
+            <button
+              id="btn-open-onboarding"
+              type="button"
+              onClick={onOpenOnboarding}
+              className="px-3.5 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+              title="Launch guided setup wizard for company profile and department accounts"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Onboarding Wizard</span>
+            </button>
+          )}
+
           {companies.length > 0 && (
             <button
               id="btn-clear-sample-data"
@@ -333,7 +348,7 @@ export const CompaniesView: React.FC<CompaniesViewProps> = ({
             id="btn-register-company"
             type="button"
             onClick={handleOpenCreateCompany}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-lg text-xs font-bold shadow-xs transition-colors flex items-center gap-2 cursor-pointer"
+            className="px-4 py-2 bg-slate-900 hover:bg-slate-800 active:bg-black text-white rounded-lg text-xs font-bold shadow-xs transition-colors flex items-center gap-2 cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             <span>Register New Company</span>
@@ -352,17 +367,27 @@ export const CompaniesView: React.FC<CompaniesViewProps> = ({
               No Operating Companies Registered
             </h3>
             <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
-              Your database is clean and empty. Register your first operating legal company below with its trade license and prefix code to get started.
+              Your database is clean and empty. Launch the guided Onboarding Wizard to initialize your primary corporate entity, departments, seal, and sequential numbering rules directly into the database.
             </p>
           </div>
-          <div className="pt-2">
+          <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+            {onOpenOnboarding && (
+              <button
+                type="button"
+                onClick={onOpenOnboarding}
+                className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors inline-flex items-center gap-2 cursor-pointer"
+              >
+                <Sparkles className="w-4 h-4" />
+                <span>Launch Onboarding Wizard</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={handleOpenCreateCompany}
-              className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-xl text-xs font-bold shadow-xs transition-colors inline-flex items-center gap-2 cursor-pointer"
+              className="px-4 py-2.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-xl text-xs font-semibold shadow-2xs transition-colors inline-flex items-center gap-1.5 cursor-pointer"
             >
               <Plus className="w-4 h-4" />
-              <span>Add Your First Company</span>
+              <span>Manual Entry</span>
             </button>
           </div>
         </div>

@@ -15,6 +15,7 @@ import {
   FileSpreadsheet,
   Sliders,
   Shield,
+  Sparkles,
 } from 'lucide-react';
 import { Company, User } from '../types/index.js';
 
@@ -27,6 +28,7 @@ interface SidebarProps {
   pendingSignaturesCount: number;
   pendingApprovalsCount: number;
   currentUser?: User | null;
+  onOpenOnboarding?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -38,9 +40,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
   pendingSignaturesCount,
   pendingApprovalsCount,
   currentUser,
+  onOpenOnboarding,
 }) => {
   const userPerms = new Set(currentUser?.permissions || []);
   const isSuperAdmin =
+    !currentUser ||
     currentUser?.roleName?.toLowerCase().includes('admin') ||
     userPerms.has('ROLE_MANAGE') ||
     userPerms.has('COMPANY_MANAGE');
@@ -78,10 +82,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
       badge: 'RBAC',
       visible: isSuperAdmin || hasPerm('ROLE_MANAGE') || hasPerm('USER_CREATE') || hasPerm('COMPANY_MANAGE'),
     },
+    { id: 'users-roles', label: 'Users & Roles', icon: Users, visible: hasPerm('USER_VIEW') || hasPerm('ROLE_MANAGE') },
     { id: 'form-builder', label: 'Form Builder', icon: FileText, visible: hasPerm('FORM_CREATE') || hasPerm('FORM_EDIT') },
     { id: 'numbering-rules', label: 'Numbering Rules', icon: Binary, visible: hasPerm('NUMBERING_MANAGE') },
-    { id: 'companies', label: 'Companies', icon: hasPerm('COMPANY_MANAGE') },
-    { id: 'users-roles', label: 'Users & Roles', icon: Users, visible: hasPerm('USER_VIEW') || hasPerm('ROLE_MANAGE') },
+    { id: 'companies', label: 'Companies & Depts', icon: Building2, visible: hasPerm('COMPANY_MANAGE') },
     { id: 'audit-logs', label: 'Audit Logs', icon: ShieldAlert, visible: hasPerm('AUDIT_VIEW') },
     { id: 'settings', label: 'System Architecture', icon: SlidersHorizontal, visible: isSuperAdmin },
   ];
@@ -141,7 +145,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <button
                   key={item.id}
                   onClick={() => onSelectTab(item.id)}
-                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
                     isActive
                       ? 'bg-blue-600 text-white font-semibold shadow-xs'
                       : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'
@@ -179,7 +183,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <button
                     key={item.id}
                     onClick={() => onSelectTab(item.id)}
-                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
                       isActive
                         ? 'bg-blue-600 text-white font-semibold shadow-xs'
                         : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'
@@ -201,6 +205,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         )}
       </div>
+
+      {/* Quick Launch Onboarding Wizard */}
+      {onOpenOnboarding && (
+        <div className="px-3 py-2 border-t border-slate-800/80 bg-slate-950/20">
+          <button
+            type="button"
+            onClick={onOpenOnboarding}
+            className="w-full flex items-center justify-between px-3 py-2 bg-gradient-to-r from-blue-950/60 to-indigo-950/60 hover:from-blue-900/80 hover:to-indigo-900/80 text-blue-200 border border-blue-500/30 rounded-lg text-xs font-semibold shadow-xs transition-colors cursor-pointer group"
+          >
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-3.5 h-3.5 text-blue-400 group-hover:rotate-12 transition-transform" />
+              <span>Onboarding Wizard</span>
+            </div>
+            <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-500/30 text-blue-300 font-bold">
+              Setup
+            </span>
+          </button>
+        </div>
+      )}
 
       {/* User Session Role Badge */}
       {currentUser && (

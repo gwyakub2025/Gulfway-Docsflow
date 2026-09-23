@@ -15,14 +15,32 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Active session simulation (Default to Super Admin, easily switched)
 let currentSessionUserId = 'usr-admin';
+let currentImpersonatedByAdminId: string | null = null;
 
-function getCurrentUser() {
+function getCurrentUser(req?: express.Request) {
+  if (req) {
+    const headerUserId = (req.headers['x-user-id'] || req.headers['x-impersonate-user-id']) as string;
+    if (headerUserId) {
+      const found = store.users.find((u) => u.id === headerUserId);
+      if (found) return found;
+    }
+  }
   return store.users.find((u) => u.id === currentSessionUserId) || store.users[0];
+}
+
+function getImpersonatingAdmin(req?: express.Request) {
+  const adminId = (req?.headers['x-impersonated-by'] as string) || currentImpersonatedByAdminId;
+  if (adminId) {
+    return store.users.find((u) => u.id === adminId) || null;
+  }
+  return null;
 }
 
 // Server-side permission check helper
 function checkPermission(req: express.Request, res: express.Response, requiredPerm: string): boolean {
-  const user = getCurrentUser();
+  const user = getCurrentUser(req);
+  const admin = getImpersonatingAdmin(req);
+
   if (!user || user.status === 'DISABLED') {
     res.status(403).json({ error: 'Unauthorized: User account is inactive or disabled' });
     return false;
@@ -57,6 +75,19 @@ function checkPermission(req: express.Request, res: express.Response, requiredPe
     return true;
   }
 
+  // If this action is being performed by an impersonating Administrator, allow administrative transaction execution
+  if (
+    admin &&
+    (admin.roleName === 'Super Administrator' ||
+      admin.roleName === 'SUPER_ADMIN' ||
+      admin.roleName === 'Company Administrator' ||
+      admin.roleName === 'Administrator' ||
+      admin.roleName?.toLowerCase().includes('admin') ||
+      (Array.isArray(admin.permissions) && admin.permissions.includes(requiredPerm as any)))
+  ) {
+    return true;
+  }
+
   res.status(403).json({ error: `Forbidden: Missing required permission [${requiredPerm}]` });
   return false;
 }
@@ -69,9 +100,11 @@ app.get('/api/health', (req, res) => {
 });
 
 app.get('/api/auth/me', (req, res) => {
-  const user = getCurrentUser();
+  const user = getCurrentUser(req);
+  const impersonatedBy = getImpersonatingAdmin(req);
   res.json({
     user,
+    impersonatedBy: impersonatedBy || undefined,
     allUsers: store.users.map((u) => ({
       id: u.id,
       fullName: u.fullName,
@@ -89,6 +122,7 @@ app.post('/api/auth/switch-user', (req, res) => {
     return res.status(404).json({ error: 'User not found' });
   }
   currentSessionUserId = userId;
+  currentImpersonatedByAdminId = null;
   store.recordAudit(
     targetUser.id,
     targetUser.fullName,
@@ -98,6 +132,83 @@ app.post('/api/auth/switch-user', (req, res) => {
     { remarks: `Switched active session to ${targetUser.fullName} (${targetUser.roleName})` }
   );
   res.json({ success: true, user: targetUser });
+});
+
+// Impersonate another user (Restricted to Administrator / Super Admin)
+app.post('/api/auth/impersonate', (req, res) => {
+  const { targetUserId, adminId } = req.body;
+  const admin = store.users.find((u) => u.id === adminId) || getCurrentUser(req);
+
+  const isAdmin =
+    admin.roleName === 'Super Administrator' ||
+    admin.roleName === 'SUPER_ADMIN' ||
+    admin.roleName === 'Company Administrator' ||
+    admin.roleName === 'Administrator' ||
+    admin.roleName?.toLowerCase().includes('admin') ||
+    (Array.isArray(admin.permissions) &&
+      (admin.permissions.includes('ROLE_MANAGE') ||
+        admin.permissions.includes('COMPANY_MANAGE') ||
+        admin.permissions.includes('USER_VIEW')));
+
+  if (!isAdmin) {
+    return res.status(403).json({ error: 'Unauthorized: Only Administrators can impersonate other users' });
+  }
+
+  const targetUser = store.users.find((u) => u.id === targetUserId);
+  if (!targetUser) {
+    return res.status(404).json({ error: 'Target user to impersonate not found' });
+  }
+
+  currentSessionUserId = targetUserId;
+  currentImpersonatedByAdminId = admin.id;
+
+  store.recordAudit(
+    admin.id,
+    admin.fullName,
+    'User Impersonation Started',
+    'AUTH',
+    targetUser.id,
+    {
+      remarks: `Administrator ${admin.fullName} (${admin.roleName}) started impersonating ${targetUser.fullName} (${targetUser.roleName})`,
+      companyId: targetUser.companyId,
+    }
+  );
+
+  res.json({
+    success: true,
+    user: targetUser,
+    impersonatedBy: admin,
+  });
+});
+
+// Exit Impersonation and restore original Administrator session
+app.post('/api/auth/exit-impersonate', (req, res) => {
+  const { adminId } = req.body;
+  const targetAdminId = adminId || currentImpersonatedByAdminId || 'usr-admin';
+  const adminUser = store.users.find((u) => u.id === targetAdminId) || store.users[0];
+
+  const previousTargetId = currentSessionUserId;
+  const previousUser = store.users.find((u) => u.id === previousTargetId);
+
+  currentSessionUserId = adminUser.id;
+  currentImpersonatedByAdminId = null;
+
+  store.recordAudit(
+    adminUser.id,
+    adminUser.fullName,
+    'User Impersonation Ended',
+    'AUTH',
+    adminUser.id,
+    {
+      remarks: `Administrator ${adminUser.fullName} ended impersonation of ${previousUser?.fullName || 'user'} and restored administrator session`,
+      companyId: adminUser.companyId,
+    }
+  );
+
+  res.json({
+    success: true,
+    user: adminUser,
+  });
 });
 
 // ==========================================

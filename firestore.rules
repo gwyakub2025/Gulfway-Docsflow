@@ -7,46 +7,71 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Helper functions for structural validation
+    function isValidId(docId) {
+      return docId is string && docId.size() > 0 && docId.size() <= 128;
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
     // Companies Collection
     match /companies/{companyId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow create, update: if isValidId(companyId) && hasRequiredFields(['id', 'name', 'code']);
+      allow delete: if true;
     }
 
     // Departments Collection
     match /departments/{departmentId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow create, update: if isValidId(departmentId) && hasRequiredFields(['id', 'name', 'code']);
+      allow delete: if true;
     }
 
     // Roles Collection (Module Access & Permissions)
     match /roles/{roleId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow create, update: if isValidId(roleId) && hasRequiredFields(['id', 'name', 'code']);
+      // Protected system roles cannot be deleted
+      allow delete: if resource.data.isSystem != true;
     }
 
     // Users Collection (Accounts)
     match /users/{userId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow create, update: if isValidId(userId) && hasRequiredFields(['id', 'fullName', 'email']);
+      allow delete: if true;
     }
 
     // Numbering Rules Collection
     match /numberingRules/{ruleId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow create, update: if isValidId(ruleId);
+      allow delete: if true;
     }
 
     // Form Templates Collection
     match /formTemplates/{templateId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow create, update: if isValidId(templateId);
+      allow delete: if true;
     }
 
     // Documents Collection
     match /documents/{documentId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow create, update: if isValidId(documentId);
+      allow delete: if true;
     }
 
     // Audit Logs Collection (Append-only immutable)
     match /auditLogs/{logId} {
-      allow read, create: if true;
+      allow read, create: if isValidId(logId);
       allow update: if false; // Audit logs are immutable
       allow delete: if false; // Audit logs can never be deleted
     }
   }
 }
+

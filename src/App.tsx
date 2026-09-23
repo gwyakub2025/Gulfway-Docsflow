@@ -15,6 +15,11 @@ import { UsersRolesView } from './components/UsersRolesView.js';
 import { AuditLogsView } from './components/AuditLogsView.js';
 import { ArchitectureView } from './components/ArchitectureView.js';
 import { AnalyticsView } from './components/AnalyticsView.js';
+import { OnboardingWizard } from './components/OnboardingWizard.js';
+import { AdminPanel } from './components/AdminPanel.js';
+import { ImpersonationBanner } from './components/ImpersonationBanner.js';
+import { ImpersonateModal } from './components/ImpersonateModal.js';
+import { UserScreenOverviewModal } from './components/UserScreenOverviewModal.js';
 import {
   FileText,
   Trash2,
@@ -75,6 +80,21 @@ export function App() {
   const [physicalSignModalDoc, setPhysicalSignModalDoc] = useState<{ doc: DocumentRecord; pdfBase64?: string } | null>(null);
   const [digitalSignModalDoc, setDigitalSignModalDoc] = useState<DocumentRecord | null>(null);
 
+  // Onboarding Wizard state
+  const [showOnboarding, setShowOnboarding] = useState<boolean>(false);
+
+  // Impersonation States
+  const [originalAdminUser, setOriginalAdminUser] = useState<User | null>(() => {
+    try {
+      const saved = sessionStorage.getItem('docflow_impersonating_admin');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [isImpersonateModalOpen, setIsImpersonateModalOpen] = useState<boolean>(false);
+  const [isScreenOverviewModalOpen, setIsScreenOverviewModalOpen] = useState<boolean>(false);
+
   // Loading indicator
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
@@ -106,6 +126,12 @@ export function App() {
       ]);
 
       setCurrentUser(meData.user);
+      if (meData.impersonatedBy) {
+        setOriginalAdminUser(meData.impersonatedBy);
+        try {
+          sessionStorage.setItem('docflow_impersonating_admin', JSON.stringify(meData.impersonatedBy));
+        } catch {}
+      }
       setAllUsersList(meData.allUsers || []);
       setCompanies(compData);
       setDepartments(deptData);
@@ -116,11 +142,39 @@ export function App() {
       setUsers(usersData);
       setRoles(rolesData);
       setDashboardStats(statsData);
+
+      // If database is clean/empty (no companies registered yet), launch onboarding wizard automatically
+      if (compData.length === 0) {
+        setShowOnboarding(true);
+      }
     } catch (err) {
       console.error('Failed to load application data', err);
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleOnboardingCompleted = async (data: {
+    company: Company;
+    departments: Department[];
+    numberingRule?: NumberingRule;
+  }) => {
+    setCompanies((prev) => {
+      const exists = prev.some((c) => c.id === data.company.id);
+      return exists ? prev : [...prev, data.company];
+    });
+    setDepartments((prev) => {
+      const newDepts = data.departments.filter((d) => !prev.some((p) => p.id === d.id));
+      return [...prev, ...newDepts];
+    });
+    if (data.numberingRule) {
+      setNumberingRules((prev) => {
+        const exists = prev.some((r) => r.id === data.numberingRule!.id);
+        return exists ? prev : [...prev, data.numberingRule!];
+      });
+    }
+    setShowOnboarding(false);
+    await refreshDocumentsAndStats();
   };
 
   useEffect(() => {
@@ -221,10 +275,58 @@ export function App() {
       const res = await api.switchUser(userId);
       if (res.success) {
         setCurrentUser(res.user);
+        setOriginalAdminUser(null);
+        try {
+          sessionStorage.removeItem('docflow_impersonating_admin');
+        } catch {}
         await refreshDocumentsAndStats();
       }
     } catch (err) {
       console.error('User switch error', err);
+    }
+  };
+
+  // Start Impersonation
+  const handleStartImpersonation = async (targetUserId: string) => {
+    try {
+      const adminToRecord = originalAdminUser || currentUser;
+      if (adminToRecord) {
+        setOriginalAdminUser(adminToRecord);
+        try {
+          sessionStorage.setItem('docflow_impersonating_admin', JSON.stringify(adminToRecord));
+        } catch {}
+      }
+      const res = await api.impersonateUser(targetUserId, adminToRecord?.id);
+      if (res.success) {
+        setCurrentUser(res.user);
+        if (res.impersonatedBy) {
+          setOriginalAdminUser(res.impersonatedBy);
+          try {
+            sessionStorage.setItem('docflow_impersonating_admin', JSON.stringify(res.impersonatedBy));
+          } catch {}
+        }
+        await refreshDocumentsAndStats();
+      }
+    } catch (err) {
+      console.error('Failed to impersonate user', err);
+    }
+  };
+
+  // Exit Impersonation and return to administrator
+  const handleExitImpersonation = async () => {
+    try {
+      const adminId = originalAdminUser?.id || 'usr-admin';
+      const res = await api.exitImpersonation(adminId);
+      if (res.success) {
+        setCurrentUser(res.user);
+        setOriginalAdminUser(null);
+        try {
+          sessionStorage.removeItem('docflow_impersonating_admin');
+        } catch {}
+        await refreshDocumentsAndStats();
+      }
+    } catch (err) {
+      console.error('Failed to exit impersonation', err);
     }
   };
 
@@ -236,6 +338,29 @@ export function App() {
   const pendingApprovalsCount = documents.filter(
     (d) => d.status === 'SIGNED' || d.status === 'AWAITING_APPROVAL'
   ).length;
+
+  // Compute user-specific pending counts for active user/screen
+  const userSpecificPendingApprovals = documents.filter((d) => {
+    if (!currentUser) return false;
+    if (d.status !== 'SIGNED' && d.status !== 'AWAITING_APPROVAL') return false;
+    const role = roles.find((r) => r.id === currentUser.roleId || r.name === currentUser.roleName);
+    const canApprove =
+      currentUser.roleName.toLowerCase().includes('admin') ||
+      (Array.isArray(currentUser.permissions) && currentUser.permissions.includes('DOCUMENT_APPROVE')) ||
+      (role && Array.isArray(role.permissions) && role.permissions.includes('DOCUMENT_APPROVE'));
+    return canApprove && (currentUser.companyId ? d.companyId === currentUser.companyId : true);
+  }).length;
+
+  const userSpecificPendingSignatures = documents.filter((d) => {
+    if (!currentUser) return false;
+    if (d.status !== 'AWAITING_SIGNATURE' && d.status !== 'NUMBER_ASSIGNED') return false;
+    return (
+      d.employeeName === currentUser.fullName ||
+      d.employeeId === currentUser.employeeId ||
+      d.createdBy === currentUser.id ||
+      (currentUser.companyId ? d.companyId === currentUser.companyId : true)
+    );
+  }).length;
 
   // Render Public Verification Page if active
   if (isPublicVerifyMode) {
@@ -263,6 +388,11 @@ export function App() {
     );
   }
 
+  // Capability checkers based on assigned role permissions
+  const canCreateForm = !currentUser || currentUser.roleName === 'Super Admin' || currentUser.permissions?.includes('FORM_CREATE');
+  const canEditForm = !currentUser || currentUser.roleName === 'Super Admin' || currentUser.permissions?.includes('FORM_EDIT');
+  const canDeleteForm = currentUser?.roleName === 'Super Admin' || (Array.isArray(currentUser?.permissions) && currentUser.permissions.includes('FORM_DELETE'));
+
   return (
     <div className="flex h-screen bg-slate-100 overflow-hidden font-sans text-slate-900 antialiased">
       {/* Primary Sidebar */}
@@ -283,15 +413,47 @@ export function App() {
         onSelectCompany={setSelectedCompanyId}
         pendingSignaturesCount={pendingSignaturesCount}
         pendingApprovalsCount={pendingApprovalsCount}
+        currentUser={currentUser}
+        onOpenOnboarding={() => setShowOnboarding(true)}
       />
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col h-screen overflow-hidden">
+        {/* Impersonation Banner when admin is viewing as another user */}
+        {originalAdminUser && currentUser && (
+          <ImpersonationBanner
+            currentUser={currentUser}
+            originalAdmin={originalAdminUser}
+            pendingApprovalsCount={userSpecificPendingApprovals}
+            pendingSignaturesCount={userSpecificPendingSignatures}
+            onExitImpersonation={handleExitImpersonation}
+            onOpenScreenOverview={() => setIsScreenOverviewModalOpen(true)}
+            onNavigateToApprovals={() => {
+              setCurrentTab('pending-approvals');
+              setActiveDocumentDetails(null);
+            }}
+            onNavigateToSignatures={() => {
+              setCurrentTab('pending-signatures');
+              setActiveDocumentDetails(null);
+            }}
+            onNavigateToCreateDoc={() => {
+              setActiveFormForFill(forms[0] || null);
+              setCurrentTab('create-document');
+              setActiveDocumentDetails(null);
+            }}
+          />
+        )}
+
         {/* Top Header */}
         <Header
           currentUser={currentUser}
           allUsers={allUsersList}
           onSwitchUser={handleSwitchUser}
+          isImpersonating={Boolean(originalAdminUser)}
+          originalAdmin={originalAdminUser}
+          onOpenImpersonateModal={() => setIsImpersonateModalOpen(true)}
+          onExitImpersonation={handleExitImpersonation}
+          onOpenOnboarding={() => setShowOnboarding(true)}
           onOpenQuickVerify={() => {
             setVerifyToken('vt_sample_leave_001024');
             setIsPublicVerifyMode(true);
@@ -315,6 +477,10 @@ export function App() {
               onOpenDigitalSign={(doc) => setDigitalSignModalDoc(doc)}
               onDocumentUpdated={async (updatedDoc) => {
                 setActiveDocumentDetails(updatedDoc);
+                await refreshDocumentsAndStats();
+              }}
+              onDocumentDeleted={async () => {
+                setActiveDocumentDetails(null);
                 await refreshDocumentsAndStats();
               }}
               onOpenPublicVerify={(token) => {
@@ -355,7 +521,7 @@ export function App() {
                     </div>
 
                     <div className="flex items-center gap-3">
-                      {forms.length > 0 && selectedFormIds.length > 0 && (
+                      {forms.length > 0 && selectedFormIds.length > 0 && canDeleteForm && (
                         <button
                           type="button"
                           onClick={() => setIsBulkDeleteModalOpen(true)}
@@ -366,20 +532,22 @@ export function App() {
                         </button>
                       )}
 
-                      <button
-                        onClick={() => {
-                          setActiveFormForEdit(null);
-                          setCurrentTab('form-builder');
-                        }}
-                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
-                      >
-                        <Plus className="w-4 h-4" />
-                        <span>Create New Form</span>
-                      </button>
+                      {canCreateForm && (
+                        <button
+                          onClick={() => {
+                            setActiveFormForEdit(null);
+                            setCurrentTab('form-builder');
+                          }}
+                          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
+                        >
+                          <Plus className="w-4 h-4" />
+                          <span>Create New Form</span>
+                        </button>
+                      )}
                     </div>
                   </div>
 
-                  {forms.length > 0 && (
+                  {forms.length > 0 && canDeleteForm && (
                     <div className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs text-slate-600">
                       <div className="flex items-center gap-2">
                         <button
@@ -430,19 +598,21 @@ export function App() {
                           Your catalog is empty. Build custom forms with dynamic fields, approvals, and numbering links using our Form Builder.
                         </p>
                       </div>
-                      <div className="pt-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setActiveFormForEdit(null);
-                            setCurrentTab('form-builder');
-                          }}
-                          className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-xl text-xs font-bold shadow-xs transition-colors inline-flex items-center gap-2 cursor-pointer"
-                        >
-                          <Plus className="w-4 h-4" />
-                          <span>Build Your First Form</span>
-                        </button>
-                      </div>
+                      {canCreateForm && (
+                        <div className="pt-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveFormForEdit(null);
+                              setCurrentTab('form-builder');
+                            }}
+                            className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-xl text-xs font-bold shadow-xs transition-colors inline-flex items-center gap-2 cursor-pointer"
+                          >
+                            <Plus className="w-4 h-4" />
+                            <span>Build Your First Form</span>
+                          </button>
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
@@ -460,13 +630,15 @@ export function App() {
                             <div>
                               <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-2">
-                                  <input
-                                    type="checkbox"
-                                    checked={isSelected}
-                                    onChange={() => toggleSelectForm(form.id)}
-                                    className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500 cursor-pointer"
-                                    title="Select for bulk actions"
-                                  />
+                                  {canDeleteForm && (
+                                    <input
+                                      type="checkbox"
+                                      checked={isSelected}
+                                      onChange={() => toggleSelectForm(form.id)}
+                                      className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500 cursor-pointer"
+                                      title="Select for bulk actions"
+                                    />
+                                  )}
                                   <span className="text-xs font-mono font-bold px-2 py-0.5 rounded-md bg-blue-50 text-blue-800 border border-blue-200">
                                     {form.formCode}
                                   </span>
@@ -475,14 +647,16 @@ export function App() {
                                   <span className="text-[11px] font-semibold text-slate-500">
                                     v{form.currentVersion}
                                   </span>
-                                  <button
-                                    type="button"
-                                    onClick={() => setFormToDelete(form)}
-                                    className="p-1 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors cursor-pointer"
-                                    title="Delete Form Template"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
+                                  {canDeleteForm && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setFormToDelete(form)}
+                                      className="p-1 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors cursor-pointer"
+                                      title="Delete Form Template"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
                                 </div>
                               </div>
                               <h3 className="font-bold text-slate-900 text-base mt-2.5">
@@ -499,15 +673,17 @@ export function App() {
                             </div>
 
                             <div className="mt-5 pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
-                              <button
-                                onClick={() => {
-                                  setActiveFormForEdit(form);
-                                  setCurrentTab('form-builder');
-                                }}
-                                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold cursor-pointer"
-                              >
-                                Edit Fields
-                              </button>
+                              {canEditForm && (
+                                <button
+                                  onClick={() => {
+                                    setActiveFormForEdit(form);
+                                    setCurrentTab('form-builder');
+                                  }}
+                                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold cursor-pointer"
+                                >
+                                  Edit Fields
+                                </button>
+                              )}
                               <button
                                 onClick={() => {
                                   setActiveFormForFill(form);
@@ -555,6 +731,9 @@ export function App() {
                   onDocumentUpdated={async () => {
                     await refreshDocumentsAndStats();
                   }}
+                  onDocumentDeleted={async () => {
+                    await refreshDocumentsAndStats();
+                  }}
                   selectedCompanyId={selectedCompanyId}
                 />
               )}
@@ -574,6 +753,9 @@ export function App() {
                   onDocumentUpdated={async () => {
                     await refreshDocumentsAndStats();
                   }}
+                  onDocumentDeleted={async () => {
+                    await refreshDocumentsAndStats();
+                  }}
                   selectedCompanyId={selectedCompanyId}
                 />
               )}
@@ -591,6 +773,9 @@ export function App() {
                   onOpenPhysicalSign={(doc) => setPhysicalSignModalDoc({ doc })}
                   onOpenDigitalSign={(doc) => setDigitalSignModalDoc(doc)}
                   onDocumentUpdated={async () => {
+                    await refreshDocumentsAndStats();
+                  }}
+                  onDocumentDeleted={async () => {
                     await refreshDocumentsAndStats();
                   }}
                   selectedCompanyId={selectedCompanyId}
@@ -641,6 +826,7 @@ export function App() {
                 <CompaniesView
                   companies={companies}
                   departments={departments}
+                  onOpenOnboarding={() => setShowOnboarding(true)}
                   onCompanyCreated={async (newComp) => {
                     setCompanies([...companies, newComp]);
                     await refreshDocumentsAndStats();
@@ -676,6 +862,7 @@ export function App() {
                   roles={roles}
                   companies={companies}
                   currentUser={currentUser}
+                  onSwitchToMatrix={() => setCurrentTab('admin-panel')}
                   onUserCreated={(newUser) => {
                     setUsers([...users, newUser]);
                     setAllUsersList([
@@ -732,6 +919,7 @@ export function App() {
                   onRoleDeleted={(deletedId) => {
                     setRoles(roles.filter((r) => r.id !== deletedId));
                   }}
+                  onImpersonateUser={handleStartImpersonation}
                 />
               )}
 
@@ -753,6 +941,94 @@ export function App() {
               {/* SETTINGS / ARCHITECTURE TAB */}
               {currentTab === 'settings' && (
                 <ArchitectureView onNavigate={(tab) => setCurrentTab(tab)} />
+              )}
+
+              {/* ADMIN CONTROL PANEL / RBAC MATRIX TAB */}
+              {currentTab === 'admin-panel' && (
+                <AdminPanel
+                  currentUser={currentUser}
+                  companies={companies}
+                  departments={departments}
+                  users={users}
+                  roles={roles}
+                  onCompanyCreated={async (newComp) => {
+                    setCompanies((prev) => [...prev, newComp]);
+                    await refreshDocumentsAndStats();
+                  }}
+                  onCompanyUpdated={(updatedComp) => {
+                    setCompanies((prev) =>
+                      prev.map((c) => (c.id === updatedComp.id ? updatedComp : c))
+                    );
+                  }}
+                  onCompanyDeleted={(deletedId) => {
+                    setCompanies((prev) => prev.filter((c) => c.id !== deletedId));
+                    if (selectedCompanyId === deletedId) {
+                      setSelectedCompanyId('ALL');
+                    }
+                  }}
+                  onUserCreated={(newUser) => {
+                    setUsers((prev) => [...prev, newUser]);
+                    setAllUsersList((prev) => [
+                      ...prev,
+                      {
+                        id: newUser.id,
+                        fullName: newUser.fullName,
+                        employeeId: newUser.employeeId,
+                        roleName: newUser.roleName,
+                        email: newUser.email,
+                      },
+                    ]);
+                  }}
+                  onUserUpdated={(updatedUser) => {
+                    setUsers((prev) => prev.map((u) => (u.id === updatedUser.id ? updatedUser : u)));
+                    setAllUsersList((prev) =>
+                      prev.map((u) =>
+                        u.id === updatedUser.id
+                          ? {
+                              id: updatedUser.id,
+                              fullName: updatedUser.fullName,
+                              employeeId: updatedUser.employeeId,
+                              roleName: updatedUser.roleName,
+                              email: updatedUser.email,
+                            }
+                          : u
+                      )
+                    );
+                    if (currentUser?.id === updatedUser.id) {
+                      setCurrentUser(updatedUser);
+                    }
+                  }}
+                  onUserDeleted={(deletedId) => {
+                    const remaining = users.filter((u) => u.id !== deletedId);
+                    setUsers(remaining);
+                    setAllUsersList((prev) => prev.filter((u) => u.id !== deletedId));
+                    if (currentUser?.id === deletedId && remaining.length > 0) {
+                      setCurrentUser(remaining[0]);
+                    }
+                  }}
+                  onRoleCreated={(newRole) => {
+                    setRoles((prev) => [...prev, newRole]);
+                  }}
+                  onRoleUpdated={(updatedRole) => {
+                    setRoles((prev) => prev.map((r) => (r.id === updatedRole.id ? updatedRole : r)));
+                    if (currentUser?.roleId === updatedRole.id) {
+                      setCurrentUser({
+                        ...currentUser,
+                        roleName: updatedRole.name,
+                        permissions: updatedRole.permissions,
+                      });
+                    }
+                  }}
+                  onRoleDeleted={(deletedId) => {
+                    setRoles((prev) => prev.filter((r) => r.id !== deletedId));
+                  }}
+                  onDepartmentCreated={(newDept) => {
+                    setDepartments((prev) => [...prev, newDept]);
+                  }}
+                  onDepartmentDeleted={(deletedId) => {
+                    setDepartments((prev) => prev.filter((d) => d.id !== deletedId));
+                  }}
+                />
               )}
             </>
           )}
@@ -906,6 +1182,63 @@ export function App() {
             await refreshDocumentsAndStats();
           }}
           onClose={() => setDigitalSignModalDoc(null)}
+        />
+      )}
+
+      {/* ONBOARDING WIZARD */}
+      <OnboardingWizard
+        isOpen={showOnboarding}
+        onClose={() => setShowOnboarding(false)}
+        onCompleted={handleOnboardingCompleted}
+        existingCompaniesCount={companies.length}
+      />
+
+      {/* IMPERSONATE USER MODAL */}
+      {isImpersonateModalOpen && (
+        <ImpersonateModal
+          currentUser={currentUser}
+          allUsers={users}
+          companies={companies}
+          departments={departments}
+          roles={roles}
+          documents={documents}
+          onImpersonate={async (targetUserId) => {
+            await handleStartImpersonation(targetUserId);
+          }}
+          onClose={() => setIsImpersonateModalOpen(false)}
+        />
+      )}
+
+      {/* USER SCREEN OVERVIEW & APPROVAL STATUS MODAL */}
+      {isScreenOverviewModalOpen && currentUser && originalAdminUser && (
+        <UserScreenOverviewModal
+          currentUser={currentUser}
+          originalAdmin={originalAdminUser}
+          companies={companies}
+          departments={departments}
+          roles={roles}
+          documents={documents}
+          onClose={() => setIsScreenOverviewModalOpen(false)}
+          onViewDocument={(doc) => {
+            setActiveDocumentDetails(doc);
+            setIsScreenOverviewModalOpen(false);
+          }}
+          onOpenDigitalSign={(doc) => {
+            setDigitalSignModalDoc(doc);
+            setIsScreenOverviewModalOpen(false);
+          }}
+          onOpenPhysicalSign={(doc) => {
+            setPhysicalSignModalDoc({ doc });
+            setIsScreenOverviewModalOpen(false);
+          }}
+          onDocumentUpdated={async () => {
+            await refreshDocumentsAndStats();
+          }}
+          onNavigateToTab={(tab) => {
+            setCurrentTab(tab);
+            setActiveDocumentDetails(null);
+            setIsScreenOverviewModalOpen(false);
+          }}
         />
       )}
     </div>

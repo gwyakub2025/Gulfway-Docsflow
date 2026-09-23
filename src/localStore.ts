@@ -413,6 +413,40 @@ class ClientLocalStorageStore {
     return { success: true, user: target };
   }
 
+  public impersonateUser(targetUserId: string, adminId?: string) {
+    const target = this.data.users.find((u) => u.id === targetUserId);
+    if (!target) throw new Error('Target user not found');
+    const admin = (adminId && this.data.users.find((u) => u.id === adminId)) || this.getCurrentUser();
+    this.data.currentUserId = targetUserId;
+    this.recordAudit(
+      admin.id,
+      admin.fullName,
+      'User Impersonation Started',
+      'AUTH',
+      target.id,
+      `Administrator ${admin.fullName} started impersonating ${target.fullName} (${target.roleName})`
+    );
+    this.saveToStorage();
+    return { success: true, user: target, impersonatedBy: admin };
+  }
+
+  public exitImpersonation(adminId?: string) {
+    const admin = (adminId && this.data.users.find((u) => u.id === adminId)) || this.data.users[0];
+    const prevUserId = this.data.currentUserId;
+    const prevUser = this.data.users.find((u) => u.id === prevUserId);
+    this.data.currentUserId = admin.id;
+    this.recordAudit(
+      admin.id,
+      admin.fullName,
+      'User Impersonation Ended',
+      'AUTH',
+      admin.id,
+      `Administrator ${admin.fullName} ended impersonation of ${prevUser?.fullName || 'user'} and restored administrator session`
+    );
+    this.saveToStorage();
+    return { success: true, user: admin };
+  }
+
   public getCompanies(): Company[] {
     return this.data.companies;
   }

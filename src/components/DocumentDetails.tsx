@@ -39,6 +39,7 @@ interface DocumentDetailsProps {
   onOpenDigitalSign: (doc: DocumentRecord) => void;
   onDocumentUpdated: (doc: DocumentRecord) => void;
   onOpenPublicVerify: (token: string) => void;
+  onDocumentDeleted?: (id: string) => void;
 }
 
 export const DocumentDetails: React.FC<DocumentDetailsProps> = ({
@@ -49,11 +50,14 @@ export const DocumentDetails: React.FC<DocumentDetailsProps> = ({
   onOpenDigitalSign,
   onDocumentUpdated,
   onOpenPublicVerify,
+  onDocumentDeleted,
 }) => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [approveModalOpen, setApproveModalOpen] = useState(false);
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [voidModalOpen, setVoidModalOpen] = useState(false);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [finalizeModalOpen, setFinalizeModalOpen] = useState(false);
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
@@ -69,6 +73,21 @@ export const DocumentDetails: React.FC<DocumentDetailsProps> = ({
   const [copiedHash, setCopiedHash] = useState(false);
   const [copiedToken, setCopiedToken] = useState(false);
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Granular capability checkers based on assigned role permissions
+  const hasPermission = (code: string): boolean => {
+    if (!currentUser) return true;
+    if (currentUser.roleName === 'Super Admin') return true;
+    return Array.isArray(currentUser.permissions) && currentUser.permissions.includes(code as any);
+  };
+
+  const canEditDocument = hasPermission('DOCUMENT_EDIT_DRAFT');
+  const canSign = hasPermission('DOCUMENT_SIGN');
+  const canApprove = hasPermission('DOCUMENT_APPROVE');
+  const canReject = hasPermission('DOCUMENT_REJECT');
+  const canVoid = hasPermission('DOCUMENT_VOID');
+  const canDeleteDocument = currentUser?.roleName === 'Super Admin' || (Array.isArray(currentUser?.permissions) && currentUser.permissions.includes('DOCUMENT_DELETE'));
+  const canDownload = hasPermission('DOCUMENT_DOWNLOAD');
 
   const showNotification = (type: 'success' | 'error', text: string) => {
     setNotification({ type, text });
@@ -233,6 +252,24 @@ export const DocumentDetails: React.FC<DocumentDetailsProps> = ({
     }
   };
 
+  const handleDeleteDocument = async () => {
+    setIsDeleting(true);
+    try {
+      await api.deleteDocument(document.id);
+      showNotification('success', `Document ${document.documentNumber || document.id} successfully deleted!`);
+      setDeleteModalOpen(false);
+      if (onDocumentDeleted) {
+        onDocumentDeleted(document.id);
+      } else {
+        onBack();
+      }
+    } catch (err: any) {
+      showNotification('error', `Failed to delete document: ${err.message}`);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   // Lifecycle stage status flags
   const isNumbered = !!document.documentNumber;
   const isAwaitingSign = document.status === 'AWAITING_SIGNATURE' || document.status === 'NUMBER_ASSIGNED';
@@ -333,11 +370,11 @@ export const DocumentDetails: React.FC<DocumentDetailsProps> = ({
             <span>Download PDF</span>
           </a>
 
-          {/* Edit Information Button (Available for non-final, non-void docs) */}
-          {document.status !== 'FINAL' && document.status !== 'VOID' && (
+          {/* Edit Information Button (Guarded by DOCUMENT_EDIT_DRAFT) */}
+          {canEditDocument && document.status !== 'FINAL' && document.status !== 'VOID' && (
             <button
               onClick={handleOpenEditModal}
-              className="px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-2xs"
+              className="px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-2xs cursor-pointer"
               title="Edit filled form information in this template"
             >
               <Pencil className="w-4 h-4 text-amber-600" />
@@ -345,8 +382,8 @@ export const DocumentDetails: React.FC<DocumentDetailsProps> = ({
             </button>
           )}
 
-          {/* SIGNING ACTIONS: Display BOTH options clearly when awaiting signature */}
-          {isAwaitingSign && (
+          {/* SIGNING ACTIONS: Display BOTH options clearly when awaiting signature (Guarded by DOCUMENT_SIGN) */}
+          {isAwaitingSign && canSign && (
             <>
               <button
                 onClick={() => onOpenDigitalSign(document)}
@@ -371,60 +408,78 @@ export const DocumentDetails: React.FC<DocumentDetailsProps> = ({
           {/* APPROVAL & MULTI-SIGNING ACTIONS: When awaiting approval or intermediate signature */}
           {isPendingApproval && (
             <>
-              <button
-                onClick={() => onOpenDigitalSign(document)}
-                className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
-                title="Sign for Employer, Finance, or Approver"
-              >
-                <PenTool className="w-4 h-4" />
-                <span>
-                  {(document.signatures || []).length > 0
-                    ? `Sign Role (${(document.signatures || []).length}/4 Signed)`
-                    : 'Apply Digital Signature'}
-                </span>
-              </button>
+              {canSign && (
+                <button
+                  onClick={() => onOpenDigitalSign(document)}
+                  className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+                  title="Sign for Employer, Finance, or Approver"
+                >
+                  <PenTool className="w-4 h-4" />
+                  <span>
+                    {(document.signatures || []).length > 0
+                      ? `Sign Role (${(document.signatures || []).length}/4 Signed)`
+                      : 'Apply Digital Signature'}
+                  </span>
+                </button>
+              )}
 
-              <button
-                onClick={() => setRejectModalOpen(true)}
-                disabled={isProcessing}
-                className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer"
-              >
-                <XCircle className="w-4 h-4" />
-                <span>Reject</span>
-              </button>
+              {canReject && (
+                <button
+                  onClick={() => setRejectModalOpen(true)}
+                  disabled={isProcessing}
+                  className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer"
+                >
+                  <XCircle className="w-4 h-4" />
+                  <span>Reject</span>
+                </button>
+              )}
 
-              <button
-                onClick={() => setApproveModalOpen(true)}
-                disabled={isProcessing}
-                className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
-              >
-                <CheckCircle2 className="w-4 h-4" />
-                <span>Approve Document</span>
-              </button>
+              {canApprove && (
+                <button
+                  onClick={() => setApproveModalOpen(true)}
+                  disabled={isProcessing}
+                  className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Approve Document</span>
+                </button>
+              )}
             </>
           )}
 
-          {/* FINALIZATION ACTION: If approved, allow locking */}
-          {document.status === 'APPROVED' && (
+          {/* FINALIZATION ACTION: If approved, allow locking (Guarded by DOCUMENT_APPROVE) */}
+          {document.status === 'APPROVED' && canApprove && (
             <button
               onClick={() => setFinalizeModalOpen(true)}
               disabled={isProcessing}
-              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5"
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
             >
               <ShieldCheck className="w-4 h-4" />
               <span>Finalize & Apply SHA-256 Seal</span>
             </button>
           )}
 
-          {/* VOID ACTION */}
-          {document.status !== 'FINAL' && document.status !== 'VOID' && isNumbered && (
+          {/* VOID ACTION (Guarded by DOCUMENT_VOID) */}
+          {canVoid && document.status !== 'FINAL' && document.status !== 'VOID' && isNumbered && (
             <button
               onClick={() => setVoidModalOpen(true)}
-              className="px-3 py-2 text-xs font-semibold text-slate-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors flex items-center gap-1"
+              className="px-3 py-2 text-xs font-semibold text-slate-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
               title="Void this document while strictly preserving its sequence number"
             >
               <Ban className="w-3.5 h-3.5" />
               <span>Void</span>
+            </button>
+          )}
+
+          {/* DELETE ACTION (Guarded by DOCUMENT_DELETE capability) */}
+          {canDeleteDocument && (
+            <button
+              onClick={() => setDeleteModalOpen(true)}
+              className="px-3 py-2 text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 border border-rose-200 rounded-lg transition-colors flex items-center gap-1.5 shadow-2xs cursor-pointer"
+              title="Permanently remove this document record from database"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+              <span>Delete</span>
             </button>
           )}
         </div>
@@ -1292,6 +1347,64 @@ export const DocumentDetails: React.FC<DocumentDetailsProps> = ({
               showDownloadButton={true}
               showOpenInNewTabButton={true}
             />
+          </div>
+        </div>
+      )}
+
+      {/* DELETE CONFIRMATION MODAL (Enforced by DOCUMENT_DELETE) */}
+      {deleteModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-5 border border-slate-200">
+            <div className="w-12 h-12 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
+              <Trash2 className="w-6 h-6" />
+            </div>
+
+            <div className="text-center space-y-1.5">
+              <h3 className="text-lg font-bold text-slate-900">Delete Document Record</h3>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Are you sure you want to permanently delete document{' '}
+                <span className="font-mono font-bold text-slate-800">
+                  {document.documentNumber || document.id}
+                </span>
+                ? This action cannot be undone.
+              </p>
+            </div>
+
+            <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-xs text-amber-800 flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                Permanently deletes the document record, signature audit chain, and associated PDF artifact.
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setDeleteModalOpen(false)}
+                disabled={isDeleting}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteDocument}
+                disabled={isDeleting}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+              >
+                {isDeleting ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Confirm Delete</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

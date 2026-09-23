@@ -123,6 +123,12 @@ const SYSTEM_CAPABILITIES: ModuleCapability[] = [
     description: 'Mark compromised or cancelled documents as VOID in immutable registry',
   },
   {
+    code: 'DOCUMENT_DELETE',
+    name: 'Permanently Delete Documents',
+    category: 'Document Authority',
+    description: 'Permanently remove draft, voided, or test document records from database',
+  },
+  {
     code: 'COMPANY_STAMP',
     name: 'Affix Official Corporate Stamp',
     category: 'Document Authority',
@@ -342,7 +348,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const handleSaveRolePermissions = async (roleId: string) => {
     try {
       setSavingRoleId(roleId);
-      const permsArray = Array.from(matrixState[roleId] || []);
+      const permsArray = Array.from(matrixState[roleId] || []) as PermissionCode[];
       const roleObj = roles.find((r) => r.id === roleId);
       if (!roleObj) throw new Error('Role not found');
 
@@ -364,7 +370,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     try {
       setSavingRoleId('ALL');
       for (const r of roles) {
-        const permsArray = Array.from(matrixState[r.id] || []);
+        const permsArray = Array.from(matrixState[r.id] || []) as PermissionCode[];
         const updated = await api.updateRole(r.id, {
           permissions: permsArray,
         });

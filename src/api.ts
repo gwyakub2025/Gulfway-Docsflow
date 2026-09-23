@@ -15,6 +15,14 @@ import {
   getDocumentsFromFirestore,
 } from './firebase.js';
 
+let activeSessionUserId: string | null = null;
+let activeImpersonatedByAdminId: string | null = null;
+
+export function setActiveSessionUser(userId: string | null, adminId?: string | null) {
+  activeSessionUserId = userId;
+  activeImpersonatedByAdminId = adminId || null;
+}
+
 /**
  * Robust fetch helper that connects to the live backend server when available,
  * and gracefully falls back to the client-side persistent localStore if running
@@ -26,7 +34,33 @@ async function safeFetch<T>(
   fallbackFn: () => T | Promise<T>
 ): Promise<T> {
   try {
-    const res = await fetch(url, options);
+    const opts: RequestInit = options ? { ...options } : {};
+    const headers: Record<string, string> = {};
+
+    if (opts.headers) {
+      if (opts.headers instanceof Headers) {
+        opts.headers.forEach((v, k) => {
+          headers[k] = v;
+        });
+      } else if (Array.isArray(opts.headers)) {
+        opts.headers.forEach(([k, v]) => {
+          headers[k] = v;
+        });
+      } else {
+        Object.assign(headers, opts.headers);
+      }
+    }
+
+    if (activeSessionUserId && !headers['x-user-id']) {
+      headers['x-user-id'] = activeSessionUserId;
+    }
+    if (activeImpersonatedByAdminId && !headers['x-impersonated-by']) {
+      headers['x-impersonated-by'] = activeImpersonatedByAdminId;
+    }
+
+    opts.headers = headers;
+
+    const res = await fetch(url, opts);
     const contentType = res.headers.get('content-type') || '';
 
     // If server responded with a valid JSON response
@@ -57,11 +91,16 @@ async function safeFetch<T>(
 
 export const api = {
   // Auth & Session
-  async getMe(): Promise<{ user: User; allUsers: Array<{ id: string; fullName: string; roleName: string; email: string }> }> {
+  async getMe(): Promise<{
+    user: User;
+    impersonatedBy?: User;
+    allUsers: Array<{ id: string; fullName: string; roleName: string; email: string }>;
+  }> {
     return safeFetch('/api/auth/me', undefined, () => clientStore.getMe());
   },
 
   async switchUser(userId: string): Promise<{ success: boolean; user: User }> {
+    setActiveSessionUser(userId, null);
     return safeFetch(
       '/api/auth/switch-user',
       {
@@ -70,6 +109,35 @@ export const api = {
         body: JSON.stringify({ userId }),
       },
       () => clientStore.switchUser(userId)
+    );
+  },
+
+  async impersonateUser(
+    targetUserId: string,
+    adminId?: string
+  ): Promise<{ success: boolean; user: User; impersonatedBy?: User }> {
+    setActiveSessionUser(targetUserId, adminId || null);
+    return safeFetch(
+      '/api/auth/impersonate',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetUserId, adminId }),
+      },
+      () => clientStore.impersonateUser(targetUserId, adminId)
+    );
+  },
+
+  async exitImpersonation(adminId?: string): Promise<{ success: boolean; user: User }> {
+    setActiveSessionUser(adminId || null, null);
+    return safeFetch(
+      '/api/auth/exit-impersonate',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ adminId }),
+      },
+      () => clientStore.exitImpersonation(adminId)
     );
   },
 

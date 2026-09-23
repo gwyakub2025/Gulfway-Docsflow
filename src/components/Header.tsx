@@ -1,5 +1,5 @@
 import React from 'react';
-import { User, Shield, CheckCircle, Database } from 'lucide-react';
+import { User, Shield, CheckCircle, Database, Sparkles, UserCheck, LogOut } from 'lucide-react';
 import { User as UserType } from '../types/index.js';
 
 interface HeaderProps {
@@ -8,6 +8,11 @@ interface HeaderProps {
   onSwitchUser: (userId: string) => void;
   onOpenQuickVerify: () => void;
   onQuickCreate: () => void;
+  onOpenOnboarding?: () => void;
+  isImpersonating?: boolean;
+  originalAdmin?: UserType | null;
+  onOpenImpersonateModal?: () => void;
+  onExitImpersonation?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -16,7 +21,19 @@ export const Header: React.FC<HeaderProps> = ({
   onSwitchUser,
   onOpenQuickVerify,
   onQuickCreate,
+  onOpenOnboarding,
+  isImpersonating,
+  originalAdmin,
+  onOpenImpersonateModal,
+  onExitImpersonation,
 }) => {
+  const isAdminOrSuperAdmin =
+    isImpersonating ||
+    currentUser?.roleName === 'Super Administrator' ||
+    currentUser?.roleName === 'SUPER_ADMIN' ||
+    currentUser?.roleName === 'Company Administrator' ||
+    currentUser?.roleName === 'Administrator' ||
+    currentUser?.roleName === 'ADMIN';
   return (
     <header className="h-16 bg-white border-b border-slate-200 px-6 flex items-center justify-between shrink-0 z-10 shadow-xs">
       <div className="flex items-center gap-4">
@@ -36,20 +53,44 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       <div className="flex items-center gap-3">
+        {/* Onboarding Wizard Setup Button */}
+        {onOpenOnboarding && (
+          <button
+            onClick={onOpenOnboarding}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition-colors cursor-pointer"
+            title="Launch first-time company and department onboarding wizard"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+            <span>Setup Wizard</span>
+          </button>
+        )}
+
         {/* Quick QR Verification Link */}
         <button
           onClick={onOpenQuickVerify}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 hover:text-blue-600 bg-slate-50 hover:bg-blue-50 border border-slate-200 rounded-lg transition-colors"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 hover:text-blue-600 bg-slate-50 hover:bg-blue-50 border border-slate-200 rounded-lg transition-colors cursor-pointer"
           title="Verify an existing document token without login"
         >
           <CheckCircle className="w-3.5 h-3.5 text-blue-600" />
           <span>Verify Document QR</span>
         </button>
 
+        {/* Impersonate User Button (for Admins) */}
+        {isAdminOrSuperAdmin && onOpenImpersonateModal && (
+          <button
+            onClick={onOpenImpersonateModal}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-indigo-700 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition-all shadow-2xs cursor-pointer"
+            title="Impersonate any employee to view their screen, approval status, and perform transactions"
+          >
+            <UserCheck className="w-3.5 h-3.5 text-indigo-600" />
+            <span>Impersonate User</span>
+          </button>
+        )}
+
         {/* Quick Create Document Button */}
         <button
           onClick={onQuickCreate}
-          className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs transition-colors"
+          className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-xs transition-colors cursor-pointer"
         >
           <span>+ Generate Document</span>
         </button>
@@ -57,13 +98,24 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="h-5 w-px bg-slate-200 mx-1"></div>
 
         {/* Live Role Switcher (Crucial for testing RBAC and role permissions) */}
-        <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg p-1.5">
-          <div className="w-7 h-7 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 text-xs font-bold">
+        <div className={`flex items-center gap-2 border rounded-lg p-1.5 ${
+          isImpersonating
+            ? 'bg-amber-50/80 border-amber-300 ring-1 ring-amber-400'
+            : 'bg-slate-50 border-slate-200'
+        }`}>
+          <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
+            isImpersonating ? 'bg-amber-500 text-white' : 'bg-blue-100 text-blue-700'
+          }`}>
             {currentUser ? currentUser.fullName.charAt(0) : 'U'}
           </div>
           <div className="text-left pr-2">
-            <div className="text-xs font-bold text-slate-800 leading-tight">
-              {currentUser?.fullName}
+            <div className="text-xs font-bold text-slate-800 leading-tight flex items-center gap-1">
+              <span>{currentUser?.fullName}</span>
+              {isImpersonating && (
+                <span className="text-[9px] bg-amber-500 text-white px-1 py-0.2 rounded font-bold uppercase">
+                  Impersonating
+                </span>
+              )}
             </div>
             <div className="text-[10px] text-slate-500 font-medium flex items-center gap-1">
               <Shield className="w-2.5 h-2.5 text-indigo-500" />
@@ -85,6 +137,17 @@ export const Header: React.FC<HeaderProps> = ({
               ))}
             </select>
           </div>
+
+          {isImpersonating && onExitImpersonation && (
+            <button
+              type="button"
+              onClick={onExitImpersonation}
+              title={`Exit Impersonation and return to ${originalAdmin?.fullName || 'Admin'}`}
+              className="ml-1 p-1 text-red-600 hover:text-white hover:bg-red-600 rounded border border-red-200 hover:border-red-600 transition-colors cursor-pointer"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       </div>
     </header>
